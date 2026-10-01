@@ -35,7 +35,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return undefined;
   }
 
-  requestQuestions(message.payload)
+  requestQuestions(message.payload, _sender, message.requestId)
     .then((data) => sendResponse({ ok: true, data }))
     .catch((error) => {
       sendResponse({
@@ -92,12 +92,26 @@ function safeSourceUrl(value) {
 
 chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`zhihuDraft:${tabId}`));
 
-async function requestQuestions(payload) {
+async function requestQuestions(payload, sender = {}, requestId) {
   // Read settings in the trusted background, never use a page-supplied API URL or key.
   const config = await activeModelConfig();
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
+  let delivery = Promise.resolve();
+  const progress = (data) => {
+    if (!sender.tab?.id || typeof requestId !== "string") return;
+    const target = sender.documentId ? { documentId: sender.documentId } : { frameId: sender.frameId || 0 };
+    delivery = delivery.then(() => chrome.tabs.sendMessage(sender.tab.id, { type: "ZH_QUESTION_PROGRESS", requestId, ...data }, target)).catch(() => {});
+  };
   try {
-    return await generateQuestions(payload, config);
+    const result = await generateQuestions(payload, config, undefined, {
+      onItem: (item, index) => progress({ item, index }),
+      onProgress: (phase) => progress({ phase }),
+    });
+    await delivery;
+    return result;
+  } catch (error) {
+    await delivery;
+    throw error;
   } finally {
     clearInterval(keepAlive);
   }

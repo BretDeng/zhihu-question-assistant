@@ -88,3 +88,20 @@ test("page-facing model status contains only the model and provider, never crede
   assert.equal(reply.data.apiKey, undefined); assert.equal(reply.data.baseURL, undefined);
   assert.equal(JSON.stringify(reply).includes("private-secret"), false);
 });
+
+test("generation progress targets the initiating document and finishes delivery before returning", async () => {
+  let listener; const delivered = [];
+  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: {}, tabs: {
+    onRemoved: { addListener() {} }, async sendMessage(id, message, options) { delivered.push({ id, message, options }); }
+  } };
+  const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { chrome, setInterval: () => 1, clearInterval() {},
+    activeModelConfig: async () => ({ apiKey: "private" }),
+    generateQuestions: async (_page, _config, _fetch, callbacks) => { callbacks.onProgress("connected"); callbacks.onItem({ question: "问题", description: "描述", keywords: [] }, 0); return { items: [] }; }
+  });
+  await new Promise(resolve => listener({ type: "GENERATE_ZHIHU_QUESTIONS", requestId: "request-1", payload: {} }, { tab: { id: 7 }, documentId: "document-1" }, resolve));
+  assert.equal(delivered.length, 2); assert.equal(delivered[1].id, 7);
+  assert.equal(delivered[1].options.documentId, "document-1");
+  assert.equal(delivered[1].message.requestId, "request-1");
+  assert.equal(JSON.stringify(delivered).includes("private"), false);
+});

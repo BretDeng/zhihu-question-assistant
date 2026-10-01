@@ -6,6 +6,7 @@
 
   let lastSelectedText = "";
   let isAnalyzing = false;
+  let currentRequest = null;
 
   const host = document.createElement("div");
   host.id = "zhihu-question-assistant-root";
@@ -37,6 +38,7 @@
         <div class="error is-hidden" role="alert"></div>
         <div class="empty-state">生成 6 个提问草稿，可编辑标题、文案和话题建议后去知乎提问。</div>
         <div class="results" aria-live="polite"></div>
+        <p class="timing-status" role="status"></p>
       </div>
     </section>
   `;
@@ -50,6 +52,22 @@
   const emptyState = shadow.querySelector(".empty-state");
   const resultsElement = shadow.querySelector(".results");
   const modelSwitch = shadow.querySelector(".model-switch");
+  const timingElement = shadow.querySelector(".timing-status");
+  const loadingText = loadingElement.querySelector("span:last-child");
+  function acceptItem(item, index) {
+    const request = currentRequest;
+    if (!request || request.received.has(index)) return;
+    if (!request.startedResults) { resultsElement.replaceChildren(); request.startedResults = true; }
+    renderResults([item], request.url, { append: true, startIndex: index });
+    request.received.add(index);
+    request.firstDraftMs ??= Math.round(performance.now() - request.started);
+    loadingText.textContent = `已生成 ${request.received.size}/6 个草稿，可先编辑，剩余继续生成…`;
+  }
+  chrome.runtime.onMessage?.addListener((message) => {
+    if (message?.type !== "ZH_QUESTION_PROGRESS" || message.requestId !== currentRequest?.id) return;
+    if (message.item && Number.isInteger(message.index) && message.index >= 0 && message.index < 6) acceptItem(message.item, message.index);
+    else if (message.phase === "connected" && !currentRequest.received.size) loadingText.textContent = "模型已连接，正在生成第一个草稿…";
+  });
   modelSwitch.onclick = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS" });
   function refreshActiveModel() {
     chrome.runtime.sendMessage({ type: "GET_ACTIVE_MODEL" }).then((reply) => {
@@ -69,11 +87,17 @@
     if (isAnalyzing) return;
 
     setLoading(true);
+    const started = performance.now();
+    currentRequest = { id: crypto.randomUUID(), received: new Set(), started, startedResults: false, url: location.href };
+    loadingText.textContent = "正在提取网页并连接模型…";
+    timingElement.textContent = "";
     refreshActiveModel();
     showError("");
 
     try {
       const pageData = extractPageContent();
+      currentRequest.extractMs = Math.round(performance.now() - started);
+      currentRequest.url = pageData.url;
       if (pageData.selectedText.length < 50 && pageData.mainText.length < 200 && pageData.description.length < 100) {
         throw new Error("当前页面正文较少，可以先选中一段文字再分析。");
       }
@@ -81,17 +105,23 @@
       const response = await chrome.runtime.sendMessage({
         type: "GENERATE_ZHIHU_QUESTIONS",
         payload: pageData,
+        requestId: currentRequest.id,
       });
 
       if (!response?.ok) {
         throw new Error(response?.error || "生成问题失败，请重试。");
       }
 
-      renderResults(response.data.items, pageData.url);
+      response.data.items.forEach((item, index) => acceptItem(item, index));
+      const total = Math.round(performance.now() - started);
+      const stats = response.data.timings || {};
+      timingElement.textContent = `首个草稿 ${(currentRequest.firstDraftMs / 1000).toFixed(1)} 秒 · 总耗时 ${(total / 1000).toFixed(1)} 秒`;
+      timingElement.title = `网页提取 ${currentRequest.extractMs} ms；模型连接 ${stats.headersMs ?? "未知"} ms；首段正文 ${stats.firstContentMs ?? "未知"} ms；模型生成完成 ${stats.totalMs ?? "未知"} ms。计时不保存网页内容或密钥。`;
     } catch (error) {
-      showError(error instanceof Error ? error.message : "发生未知错误，请重试。");
+      showError(`${error instanceof Error ? error.message : "发生未知错误，请重试。"}${currentRequest?.received.size ? " 已生成的有效草稿已保留。" : ""}`);
     } finally {
       setLoading(false);
+      currentRequest = null;
     }
   }
 
@@ -153,13 +183,15 @@
     }
   }
 
-  function renderResults(items, sourceUrl) {
-    resultsElement.replaceChildren();
+  function renderResults(items, sourceUrl, { append = false, startIndex = 0 } = {}) {
+    if (!append) resultsElement.replaceChildren();
     emptyState.classList.add("is-hidden");
 
-    items.forEach((item, index) => {
+    items.forEach((item, localIndex) => {
+      const index = startIndex + localIndex;
       const card = document.createElement("article");
       card.className = "result-card";
+      card.dataset.index = String(index);
 
       const heading = document.createElement("div");
       heading.className = "result-heading";
@@ -207,7 +239,8 @@
         finally { openButton.disabled = false; }
       });
       card.append(heading, titleInput, descriptionInput, topicLabel, openButton);
-      resultsElement.append(card);
+      const next = [...resultsElement.children].find(child => Number(child.dataset.index) > index);
+      resultsElement.insertBefore(card, next || null);
       const fitField = (field, min, max) => {
         field.style.height = "auto";
         field.style.height = `${Math.max(min, Math.min(max, field.scrollHeight + 2))}px`;
@@ -256,6 +289,7 @@
       .analyze-button:hover{background:#5140eb}.loading,.error,.empty-state{margin-top:12px;padding:12px 14px;border-radius:12px;font-size:12px;line-height:1.6}
       .loading{background:var(--qa-soft);color:#5140a9}.spinner{display:none}.error{color:var(--qa-danger);background:#fff1f2;border:1px solid #f1d4db}.empty-state{background:white;color:var(--qa-muted);border:1px dashed var(--qa-line)}
       .results{display:grid;gap:10px;margin-top:12px}.result-card{padding:14px;background:white;border:1px solid var(--qa-line);border-radius:14px;box-shadow:0 2px 6px #21213404}
+      .timing-status{font-size:10px;color:var(--qa-muted);margin:10px 2px 0}.timing-status:empty{display:none}
       .number{font-size:10px;font-weight:600;color:var(--qa-muted);letter-spacing:.08em}.result-heading{margin-bottom:8px}
       .draft-field{display:block;width:100%;font:inherit;line-height:1.7;resize:vertical;margin:0 0 10px}
       .draft-title{font-size:14px;font-weight:600;min-height:64px;border-color:transparent;background:#fafafd;padding:8px 10px}

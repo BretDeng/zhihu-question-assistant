@@ -6,7 +6,7 @@
 
 从 [GitHub 最新版本](https://github.com/BretDeng/zhihu-question-assistant/releases/latest)下载扩展 ZIP。2.x 是跨平台纯 Chrome 扩展，不再需要下载旧版 macOS / Windows 伴侣程序。
 
-1. 解压 `ZhihuQuestionAssistant-Extension-2.1.2.zip`。
+1. 解压 `ZhihuQuestionAssistant-Extension-2.1.3.zip`。
 2. 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择包含 `manifest.json` 的目录。
 4. 点击扩展图标配置模型，再刷新要分析的网页。
@@ -41,7 +41,9 @@
 
 ## 接口与实现
 
-扩展通过原生 `fetch` 调用 Chat Completions，没有运行时依赖。使用流式请求，本地拼接最终文案后校验 JSON；不显示或使用模型的 reasoning 内容。
+扩展通过原生 `fetch` 调用 Chat Completions，没有运行时依赖。流式请求中每个完整草稿通过字段校验后即可显示，剩余结果继续追加，不覆盖已编辑内容；最后仍校验整体 JSON 与 6 项结果。后续生成失败时保留已显示的有效草稿。不显示或使用模型的 reasoning 内容；不支持流式返回的供应商仍在完成后一次展示。
+素材去除重复行；全文正文最多 6,000 字符；有选中文本时最多保留 8,000 字符选中内容，另补充最多 1,500 字符的去重背景。长文截断可能减少上下文，建议选中最相关的段落。仍生成 6 个完整问题，不额外发起模型请求。
+结果下方显示首个草稿与总耗时，鼠标悬停可查看网页提取、模型连接与首段正文耗时；只在当前面板计时，不保存或上传性能日志。实际提速取决于模型和网络，逐个展示首先改善可用结果的等待时间。
 调用失败不会自动重试计费。请求最多 180 秒，响应头等待最多 25 秒；网络、额度、权限或输出格式错误会显示提示。
 
 [直答官方文档](https://developer.zhihu.com/docs?key=zhida)只保证 `model/messages/stream`。直答请求固定到官方域名并携带秒级时间戳，Agent 使用单条完整提示。

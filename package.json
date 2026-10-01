@@ -1,6 +1,6 @@
 {
   "name": "zhihu-question-assistant",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "private": true,
   "type": "module",
   "description": "无需本地服务的知乎提问 Chrome 扩展",
