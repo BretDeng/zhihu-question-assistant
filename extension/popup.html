@@ -1,64 +1,28 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>知乎提问助手设置</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="app-shell">
-      <header class="app-header">
-        <p class="eyebrow">ZH QUESTION LAB</p>
-        <h1>模型设置</h1>
-        <p class="subtitle">网页右下角的悬浮球是主要入口，本页面只用于配置模型。</p>
-      </header>
-
-      <div class="settings-panel settings-panel-static">
-        <div class="settings-content">
-          <p class="settings-intro">留空时使用后端 <code>.env</code> 中的默认配置；自定义 URL 和 Key 需要同时填写。</p>
-
-          <label class="field">
-            <span>模型提供方</span>
-            <select id="providerInput">
-              <option value="">使用后端默认设置</option>
-              <option value="openai">OpenAI-compatible API</option>
-              <option value="codex-cli">本机 Codex CLI</option>
-            </select>
-          </label>
-
-          <label class="field api-config-field">
-            <span>API Base URL</span>
-            <input id="baseUrlInput" type="url" placeholder="https://api.openai.com/v1" autocomplete="url" />
-          </label>
-
-          <label class="field api-config-field">
-            <span>API Key</span>
-            <input id="apiKeyInput" type="password" placeholder="sk-..." autocomplete="off" />
-          </label>
-
-          <label class="field">
-            <span>Model Name</span>
-            <input id="modelInput" type="text" placeholder="gpt-4o-mini" autocomplete="off" />
-            <small id="modelHint" class="field-hint">API 模式下留空时使用后端模型配置。</small>
-          </label>
-
-          <p id="apiSecurityNotice" class="security-notice">
-            Key 只保存在当前浏览器会话中，完全退出 Chrome 后需重新填写。
-          </p>
-          <p id="codexNotice" class="security-notice codex-notice is-hidden">
-            Codex CLI 模式复用本机登录态，不需要 API Key。首次使用前请运行 <code>codex login</code>。
-          </p>
-
-          <div class="settings-actions">
-            <button id="saveSettingsButton" class="secondary-button" type="button">保存设置</button>
-            <button id="clearSettingsButton" class="text-button" type="button">清空设置</button>
-          </div>
-          <p id="settingsStatus" class="settings-status" aria-live="polite"></p>
-        </div>
-      </div>
-    </main>
-
-    <script src="popup.js"></script>
-  </body>
-</html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>知乎提问助手 · 模型</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<main class="app-shell">
+  <header class="app-header"><div><p class="eyebrow">QUESTION LAB</p><h1>知乎提问助手</h1></div><button id="expandDashboardButton" class="header-tag" type="button">展开面板</button></header>
+  <section class="active-card"><span class="qa-label">当前使用</span><h2 id="activeName">尚未配置模型</h2><p id="activeDetail">添加你的 API，开始把网页变成好问题。</p></section>
+  <div class="section-heading"><h2>我的模型 <span id="profileCount">0</span></h2><button id="addProfileButton" class="qa-secondary" type="button">添加配置</button></div>
+  <input id="profileSearch" class="search-input" type="search" placeholder="搜索名称、供应商或模型…" aria-label="搜索模型配置">
+  <div id="profileList" class="profile-list" aria-label="保存的模型配置"></div>
+  <section id="profileEditor" class="editor-card is-hidden" aria-label="编辑模型配置">
+    <div class="section-heading"><h2 id="editorTitle">添加模型配置</h2><button id="cancelEditButton" class="qa-quiet" type="button">取消</button></div>
+    <form id="profileForm">
+      <label class="field"><span>配置名称</span><input id="nameInput" maxlength="60" placeholder="例如：日常写作 / 知乎直答"></label>
+      <label class="field"><span>提供方</span><select id="providerInput"><option value="openai">OpenAI 兼容 API</option><option value="zhida">知乎直答</option></select></label>
+      <label class="field" id="baseUrlField"><span>API 地址</span><input id="baseUrlInput" type="url" placeholder="https://api.openai.com/v1" autocomplete="off"></label>
+      <label class="field"><span>模型名称</span><input id="modelInput" list="modelOptions" placeholder="gpt-4o-mini" autocomplete="off"><datalist id="modelOptions"></datalist><small id="modelHint"></small></label>
+      <label class="field"><span>API Key / Access Secret</span><input id="apiKeyInput" type="password" placeholder="输入密钥" autocomplete="off" spellcheck="false"><small id="keyHint">密钥仅用于你选择的 API，不交给网页。</small></label>
+      <label class="remember-option"><input id="rememberKeyInput" type="checkbox" checked><span>在这台设备上记住密钥</span></label>
+      <p class="security-notice">保存在扩展本机存储，不同步云端；不是系统钥匙串。取消勾选后密钥仅保留到浏览器会话结束。</p>
+      <button id="saveSettingsButton" class="qa-primary save-button" type="submit">保存并使用</button>
+    </form>
+  </section>
+  <p id="settingsStatus" class="settings-status" role="status" aria-live="polite"></p>
+  <footer>打开网页右下角的「问」，即可分析内容与生成提问。</footer>
+</main>
+<script src="uiTheme.js"></script><script type="module" src="popup.js"></script>
+</body></html>

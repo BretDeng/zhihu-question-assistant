@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>知乎草稿交接回归测试</title>
+<style>
+  body { margin:0; font:16px/1.7 system-ui; background:#f6f7f9; color:#172033; }
+  header { padding:20px 40px; background:white; color:#06f; font-size:30px; }
+  main { margin:30px 40px; width:60%; } button { padding:10px 20px; cursor:pointer; }
+  .Modal { padding:28px; background:white; border:1px solid #ddd; border-radius:14px; }
+  textarea { width:100%; padding:10px; font:inherit; box-sizing:border-box; }
+  [contenteditable] { min-height:150px; padding:12px; border:1px solid #ddd; white-space:pre-wrap; }
+  .AskDetail { margin:20px 0; } [hidden] { display:none; }
+</style>
+<header>知乎提问助手 · 本地测试页</header>
+<main><p>使用新版脚本测试自动打开、空白字段填写和右侧草稿面板。这里不会联网调用模型，也不会发布任何问题。</p>
+<button id="entry">提问题</button>
+<button id="reset-draft" type="button">重置测试草稿</button>
+<div class="Modal" hidden><form class="Ask-form" onsubmit="return false">
+<div class="AskTitle"><textarea placeholder="写下你的问题，准确地描述问题更容易得到解答"></textarea></div>
+<div class="AskDetail" hidden><div contenteditable="true" role="textbox" aria-label="问题描述"></div></div>
+<div class="TopicInputAlias-tagInput"></div>
+<span aria-label="绑定相关话题可以被更多人看到"><button type="button" id="topics">绑定话题</button></span>
+<label class="TopicInputAlias-input" hidden><input role="combobox" aria-activedescendant="AutoComplete19-0" placeholder="绑定相关话题可以被更多人看到"></label>
+<div class="TopicInputAlias-suggestionContainer" role="listbox" hidden></div>
+<button type="button" disabled>发布问题（测试页禁用）</button>
+<button type="button" id="simulate-published">模拟发布成功（仅测试）</button>
+</form></div></main>
+<script src="zhihu-draft-fixture.js"></script>
+<script src="../../extension/uiTheme.js"></script>
+<script src="../../extension/zhihuComposer.js"></script>
+<script src="../../extension/zhihuTopics.js"></script>
+<script src="../../extension/zhihuDraftLifecycle.js"></script>
+<script src="../../extension/zhihuDraft.js"></script>
+</html>

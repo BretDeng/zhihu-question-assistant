@@ -2,21 +2,29 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwErPxpzXiNyg7bDqwpuzpVWHsPn7Nf6JeZ82PJMMLZ8lEpaOWeKn7FAZtJzi807Km2F0wW5NcAVwFJWCnL95A2d+M0uqhvTRrUb7SRv5mk30+Ss80pvgdOLmh6ggflMBVCkzrgNLiPO8bUlXMAA6IT4PJweaoafLyhISVBFrxiLFWJiznXaQv1N+6dHYoDalYsVNn3v3KTEwUOCv2fjnkBz6ypqG+WUHNTFOFYq3ECec2txieq5S2SGYXkgoRh2gh5XqHQyx1/NqeARCBNcEBDtvzEiqgekPZvU8OnC8fvWbc6Z4YTB8VmrNGtOGAfNn8ScKAlsRvBnV/F7rRxkJjwIDAQAB",
   "name": "知乎提问助手",
-  "version": "1.0.0",
+  "version": "2.1.2",
+  "minimum_chrome_version": "110",
   "description": "读取当前网页内容，生成多个适合知乎讨论的问题角度。",
   "permissions": ["clipboardWrite", "storage"],
-  "host_permissions": ["http://localhost:3000/*"],
+  "host_permissions": ["https://api.openai.com/*", "https://developer.zhihu.com/*"],
+  "optional_host_permissions": ["https://*/*"],
   "action": {
     "default_title": "知乎提问助手",
     "default_popup": "popup.html"
   },
   "background": {
-    "service_worker": "serviceWorker.js"
+    "service_worker": "serviceWorker.js",
+    "type": "module"
   },
   "content_scripts": [
     {
+      "matches": ["https://www.zhihu.com/*"],
+      "js": ["uiTheme.js", "zhihuComposer.js", "zhihuTopics.js", "zhihuDraftLifecycle.js", "zhihuDraft.js"],
+      "run_at": "document_idle"
+    },
+    {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["contentScript.js"],
+      "js": ["uiTheme.js", "contentScript.js"],
       "run_at": "document_idle"
     }
   ]

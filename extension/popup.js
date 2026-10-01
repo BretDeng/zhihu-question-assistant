@@ -1,115 +1,100 @@
-const MODEL_CONFIG_STORAGE_KEY = "modelConfig";
-const API_KEY_SESSION_STORAGE_KEY = "modelApiKey";
-
-const providerInput = document.querySelector("#providerInput");
-const baseUrlInput = document.querySelector("#baseUrlInput");
-const apiKeyInput = document.querySelector("#apiKeyInput");
-const modelInput = document.querySelector("#modelInput");
-const saveSettingsButton = document.querySelector("#saveSettingsButton");
-const clearSettingsButton = document.querySelector("#clearSettingsButton");
-const settingsStatus = document.querySelector("#settingsStatus");
-const apiConfigFields = [...document.querySelectorAll(".api-config-field")];
-const apiSecurityNotice = document.querySelector("#apiSecurityNotice");
-const codexNotice = document.querySelector("#codexNotice");
-const modelHint = document.querySelector("#modelHint");
-
-saveSettingsButton.addEventListener("click", saveModelSettings);
-clearSettingsButton.addEventListener("click", clearModelSettings);
-providerInput.addEventListener("change", updateProviderFields);
-loadModelSettings();
-
-async function loadModelSettings() {
-  try {
-    const modelConfig = await getStoredModelConfig();
-    providerInput.value = modelConfig.provider || "";
-    baseUrlInput.value = modelConfig.baseURL || "";
-    const sessionKey = await chrome.storage.session.get(API_KEY_SESSION_STORAGE_KEY);
-    apiKeyInput.value = sessionKey[API_KEY_SESSION_STORAGE_KEY] || "";
-    modelInput.value = modelConfig.model || "";
-    updateProviderFields();
-  } catch {
-    showSettingsStatus("读取设置失败，请重新打开扩展。", true);
+import { DEFAULT_BASE_URL, resolveConfig } from "./modelClient.js";
+import { readProfiles, saveProfile, selectProfile, removeProfile } from "./modelProfiles.js";
+const theme = document.createElement("style");
+theme.textContent = globalThis.ZhihuUiTheme;
+document.head.append(theme);
+const $ = (selector) => document.querySelector(selector);
+const fullDashboard = new URL(location.href).searchParams.get("view") === "dashboard";
+document.documentElement.classList.toggle("is-dashboard", fullDashboard);
+$("#expandDashboardButton").classList.toggle("is-hidden", fullDashboard);
+$("#expandDashboardButton").onclick = async () => {
+  try { await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard") }); }
+  catch { showStatus("无法打开独立面板，请重试。", true); }
+};
+let state;
+let editingId = null;
+let busy = false;
+$("#addProfileButton").onclick = () => openEditor();
+$("#cancelEditButton").onclick = () => $("#profileEditor").classList.add("is-hidden");
+$("#profileSearch").oninput = renderProfiles;
+$("#providerInput").onchange = () => { $("#modelInput").value = ""; updateProviderFields(); };
+$("#profileForm").onsubmit = saveSettings;
+load();
+async function load() {
+  try { state = await readProfiles(); renderProfiles(); }
+  catch { showStatus("读取配置失败，请重新打开扩展。", true); }
+}
+function keyFor(id) { return state.localKeys[id] || state.sessionKeys[id] || ""; }
+function renderProfiles() {
+  if (!state) return;
+  const active = state.items.find((item) => item.id === state.activeId);
+  $("#activeName").textContent = active?.name || "尚未配置模型";
+  $("#activeDetail").textContent = active ? `${active.model} · ${keyFor(active.id) ? "密钥已就绪" : "需补充密钥"}` : "添加你的 API，开始把网页变成好问题。";
+  $("#profileCount").textContent = state.items.length;
+  const list = $("#profileList");
+  list.replaceChildren();
+  const search = $("#profileSearch").value.trim().toLowerCase();
+  const items = state.items.filter((item) => `${item.name} ${item.model} ${item.baseURL}`.toLowerCase().includes(search));
+  if (!items.length) {
+    const empty = document.createElement("p"); empty.className = "empty-state";
+    empty.textContent = state.items.length ? "没有找到匹配的模型配置。" : "还没有保存的模型。添加一套配置，以后就能一键切换。";
+    list.append(empty);
+  }
+  for (const item of items) {
+    const row = document.createElement("article"); row.className = `profile-card${item.id === state.activeId ? " is-active" : ""}`;
+    const info = document.createElement("div"); info.className = "profile-info";
+    const name = document.createElement("h3"); name.textContent = item.name;
+    const model = document.createElement("p"); model.textContent = item.model;
+    const api = document.createElement("small"); api.textContent = `${new URL(item.baseURL || DEFAULT_BASE_URL).hostname} · ${keyFor(item.id) ? (item.rememberKey ? "本机保存" : "会话密钥") : "缺少密钥"}`;
+    info.append(name, model, api);
+    const actions = document.createElement("div"); actions.className = "profile-actions";
+    const use = document.createElement("button"); use.className = item.id === state.activeId ? "active-pill" : "qa-secondary";
+    use.textContent = item.id === state.activeId ? "正在使用" : "使用"; use.disabled = item.id === state.activeId;
+    use.onclick = () => action(async () => { await selectProfile(item.id); await load(); showStatus(`已切换到「${item.name}」。`); });
+    const edit = document.createElement("button"); edit.className = "qa-quiet"; edit.textContent = "编辑"; edit.onclick = () => openEditor(item);
+    const remove = document.createElement("button"); remove.className = "qa-quiet danger"; remove.textContent = "删除";
+    remove.onclick = () => action(async () => { if (!confirm(`删除「${item.name}」及其密钥？`)) return; await removeProfile(item.id); await load(); if (editingId === item.id) $("#profileEditor").classList.add("is-hidden"); showStatus("配置和对应密钥已删除。"); });
+    actions.append(use, edit, remove); row.append(info, actions); list.append(row);
   }
 }
-
-async function saveModelSettings() {
-  const modelConfig = readSettingsForm();
-  if (modelConfig.provider !== "codex-cli" && modelConfig.baseURL && !isHttpUrl(modelConfig.baseURL)) {
-    showSettingsStatus("API Base URL 必须以 http:// 或 https:// 开头。", true);
-    return;
-  }
-  if (modelConfig.provider !== "codex-cli" && Boolean(modelConfig.baseURL) !== Boolean(modelConfig.apiKey)) {
-    showSettingsStatus("API Base URL 和 API Key 必须同时填写。", true);
-    return;
-  }
-
-  try {
-    const { apiKey, ...persistedConfig } = modelConfig;
-    await chrome.storage.local.set({ [MODEL_CONFIG_STORAGE_KEY]: persistedConfig });
-    if (apiKey) {
-      await chrome.storage.session.set({ [API_KEY_SESSION_STORAGE_KEY]: apiKey });
-    } else {
-      await chrome.storage.session.remove(API_KEY_SESSION_STORAGE_KEY);
-    }
-    showSettingsStatus("设置已保存。悬浮球下次分析时会使用新配置。", false);
-  } catch {
-    showSettingsStatus("保存失败，请重试。", true);
-  }
+function openEditor(item) {
+  if (busy) return;
+  editingId = item?.id || null;
+  $("#editorTitle").textContent = item ? "编辑模型配置" : "添加模型配置";
+  $("#nameInput").value = item?.name || ""; $("#providerInput").value = item?.provider || "openai";
+  $("#baseUrlInput").value = item?.baseURL || ""; $("#modelInput").value = item?.model || "";
+  $("#apiKeyInput").value = ""; $("#apiKeyInput").placeholder = item && keyFor(item.id) ? "已保存 · 留空保留原密钥" : "输入密钥";
+  $("#rememberKeyInput").checked = item ? item.rememberKey : true;
+  updateProviderFields(); $("#profileEditor").classList.remove("is-hidden"); $("#nameInput").focus();
+  $("#profileEditor").scrollIntoView({ block: "nearest" });
 }
-
-async function clearModelSettings() {
-  try {
-    await Promise.all([
-      chrome.storage.local.remove(MODEL_CONFIG_STORAGE_KEY),
-      chrome.storage.session.remove(API_KEY_SESSION_STORAGE_KEY),
-    ]);
-    providerInput.value = "";
-    baseUrlInput.value = "";
-    apiKeyInput.value = "";
-    modelInput.value = "";
-    updateProviderFields();
-    showSettingsStatus("设置已清空，将使用后端默认配置。", false);
-  } catch {
-    showSettingsStatus("清空失败，请重试。", true);
-  }
-}
-
-async function getStoredModelConfig() {
-  const stored = await chrome.storage.local.get(MODEL_CONFIG_STORAGE_KEY);
-  const value = stored[MODEL_CONFIG_STORAGE_KEY];
-  return value && typeof value === "object" ? value : {};
-}
-
-function readSettingsForm() {
-  const usesCodex = providerInput.value === "codex-cli";
-  return {
-    provider: providerInput.value,
-    baseURL: usesCodex ? "" : baseUrlInput.value.trim(),
-    apiKey: usesCodex ? "" : apiKeyInput.value.trim(),
-    model: modelInput.value.trim(),
-  };
-}
-
 function updateProviderFields() {
-  const usesCodex = providerInput.value === "codex-cli";
-  apiConfigFields.forEach((field) => field.classList.toggle("is-hidden", usesCodex));
-  apiSecurityNotice.classList.toggle("is-hidden", usesCodex);
-  codexNotice.classList.toggle("is-hidden", !usesCodex);
-  modelInput.placeholder = usesCodex ? "留空使用 Codex CLI 默认模型" : "gpt-4o-mini";
-  modelHint.textContent = usesCodex
-    ? "通常建议留空；填写后会作为 codex exec --model 参数。"
-    : "API 模式下留空时使用后端模型配置。";
+  const zhida = $("#providerInput").value === "zhida";
+  $("#baseUrlField").classList.toggle("is-hidden", zhida);
+  $("#modelInput").placeholder = zhida ? "zhida-agent" : "gpt-4o-mini";
+  $("#modelHint").textContent = zhida ? "可选择 Agent、快速或思考模型。" : "支持填写供应商提供的任意模型 ID。";
+  $("#modelOptions").replaceChildren(...(zhida ? ["zhida-agent", "zhida-fast-1p5", "zhida-thinking-1p5"] : ["gpt-4o-mini"]).map((name) => { const option = document.createElement("option"); option.value = name; return option; }));
 }
-
-function isHttpUrl(value) {
+async function saveSettings(event) {
+  event.preventDefault(); if (busy) return;
+  const form = { id: editingId, name: $("#nameInput").value, provider: $("#providerInput").value,
+    baseURL: $("#baseUrlInput").value.trim() || DEFAULT_BASE_URL, model: $("#modelInput").value,
+    apiKey: $("#apiKeyInput").value, rememberKey: $("#rememberKeyInput").checked };
   try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
+    const config = resolveConfig({ ...form, apiKey: form.apiKey || (editingId && keyFor(editingId)) });
+    const previous = state.items.find((item) => item.id === editingId);
+    if (previous && !form.apiKey.trim() && new URL(resolveConfig({ ...previous, apiKey: keyFor(editingId) }).baseURL).origin !== new URL(config.baseURL).origin) throw new Error("API 域名已改变，请填写对应服务的新密钥。");
+    const permission = chrome.permissions.request({ origins: [`${new URL(config.baseURL).origin}/*`] });
+    busy = true; $("#saveSettingsButton").disabled = true;
+    if (!await permission) throw new Error("未授予该 API 域名访问权限，配置未保存。");
+    await saveProfile(form); $("#apiKeyInput").value = ""; $("#profileEditor").classList.add("is-hidden");
+    await load(); showStatus("已保存并启用，下次分析将使用这套模型。");
+  } catch (error) { showStatus(error.message || "保存失败，请重试。", true); }
+  finally { busy = false; $("#saveSettingsButton").disabled = false; }
 }
-
-function showSettingsStatus(message, isError) {
-  settingsStatus.textContent = message;
-  settingsStatus.classList.toggle("is-error", isError);
+async function action(callback) {
+  if (busy) return; busy = true;
+  try { await callback(); } catch (error) { showStatus(error.message || "操作失败。", true); }
+  finally { busy = false; }
 }
+function showStatus(message, error = false) { $("#settingsStatus").textContent = message; $("#settingsStatus").classList.toggle("is-error", error); }

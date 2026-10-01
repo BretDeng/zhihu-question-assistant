@@ -1,175 +1,32 @@
-:root {
-  color-scheme: light;
-  font-family:
-    Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
-  color: #172033;
-  background: #f4f7fb;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  width: 390px;
-  min-height: 430px;
-  margin: 0;
-  background:
-    radial-gradient(circle at top right, rgba(0, 102, 255, 0.12), transparent 34%),
-    #f4f7fb;
-}
-
-button,
-input,
-select {
-  font: inherit;
-}
-
-.app-shell {
-  padding: 20px;
-}
-
-.app-header {
-  margin-bottom: 14px;
-}
-
-.eyebrow {
-  margin: 0 0 5px;
-  color: #0066ff;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-}
-
-h1 {
-  margin: 0;
-  font-size: 23px;
-  letter-spacing: -0.03em;
-}
-
-.subtitle {
-  margin: 7px 0 0;
-  color: #687289;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.settings-panel {
-  border: 1px solid #dfe6f0;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.84);
-}
-
-.settings-content {
-  padding: 13px;
-}
-
-.settings-intro,
-.security-notice,
-.settings-status {
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-.settings-intro {
-  margin: 0 0 11px;
-  color: #687289;
-}
-
-.settings-intro code {
-  padding: 1px 4px;
-  border-radius: 4px;
-  background: #eef2f7;
-}
-
-.field {
-  display: grid;
-  gap: 5px;
-  margin-top: 10px;
-  color: #3c475c;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.field input,
-.field select {
-  width: 100%;
-  border: 1px solid #dce3ee;
-  border-radius: 8px;
-  padding: 9px 10px;
-  outline: none;
-  color: #172033;
-  background: #fff;
-  font-weight: 500;
-}
-
-.field input:focus,
-.field select:focus {
-  border-color: #6da8ff;
-  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.1);
-}
-
-.field-hint {
-  color: #8a95a8;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.45;
-}
-
-.security-notice {
-  margin: 11px 0 0;
-  padding: 8px 9px;
-  border-radius: 8px;
-  color: #79511d;
-  background: #fff7e8;
-}
-
-.security-notice code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.codex-notice {
-  color: #315179;
-  background: #eaf2ff;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 11px;
-}
-
-.secondary-button,
-.text-button {
-  border-radius: 8px;
-  padding: 8px 11px;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.secondary-button {
-  border: 1px solid #0066ff;
-  color: #fff;
-  background: #0066ff;
-}
-
-.text-button {
-  border: 1px solid #dce3ee;
-  color: #59657a;
-  background: #fff;
-}
-
-.settings-status {
-  min-height: 17px;
-  margin: 7px 0 0;
-  color: #27734b;
-}
-
-.settings-status.is-error {
-  color: #9b2c2c;
-}
-
-.is-hidden {
-  display: none !important;
-}
+/* Chrome computes popup size from its root. Avoid a 100vw constraint here:
+   the initial popup viewport can be narrow and lock the layout into that size. */
+html{width:440px;min-width:440px}
+body{width:440px;min-width:440px;min-height:440px;margin:0;background:var(--qa-bg,#f4f4f7)}
+.app-shell{padding:20px}.app-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px}
+.eyebrow{margin:0 0 2px;color:var(--qa-muted);font-size:9px;letter-spacing:.12em;font-weight:600}
+h1{font-size:20px;letter-spacing:-.035em;margin:0;line-height:1.4}h2{font-size:14px;margin:0}h3{font-size:13px;margin:0}
+.header-tag{color:var(--qa-muted);font-size:11px;border:1px solid var(--qa-line);border-radius:8px;padding:6px 10px;background:white;white-space:nowrap;flex-shrink:0}
+.app-header h1,.section-heading button{white-space:nowrap}.section-heading h2{display:flex;align-items:center;white-space:nowrap}
+.active-card{padding:18px 20px;background:var(--qa-soft);border:1px solid #dcd8ff;border-radius:16px;margin-bottom:22px}
+.active-card h2{font-size:19px;font-weight:600;color:#4031bd}.active-card p{font-size:12px;color:#726c96;margin:4px 0 0;overflow-wrap:anywhere}
+.section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.section-heading h2 span{color:var(--qa-muted);font-size:11px;margin-left:5px;font-weight:400}
+.search-input{width:100%;margin:0 0 12px;background:#fafafd}.profile-list{display:grid;gap:9px}
+.profile-card{display:flex;gap:10px;align-items:center;padding:14px;background:white;border:1px solid var(--qa-line);border-radius:14px;box-shadow:0 1px 3px #21213405}
+.profile-card.is-active{border-color:#bcb3ff;box-shadow:0 0 0 1px #6250ff09}.profile-info{flex:1;min-width:0}.profile-info p{margin:2px 0;font-size:12px;overflow-wrap:anywhere}.profile-info h3{overflow-wrap:anywhere}.profile-info small{font-size:10px;color:var(--qa-muted);overflow-wrap:anywhere}
+.profile-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;width:112px;flex-shrink:0;gap:3px}.profile-actions .qa-secondary{width:100%;padding:5px 12px;font-size:12px}.profile-actions .qa-quiet{font-size:11px}.profile-actions .active-pill{width:100%}
+.active-pill{background:var(--qa-soft);border:0;border-radius:7px;color:#5140dc;font-size:10px;padding:5px 9px;opacity:1!important;cursor:default!important}
+.danger:hover{color:var(--qa-danger)}.editor-card{padding:18px;margin-top:18px;background:white;border:1px solid var(--qa-line);border-radius:16px;box-shadow:var(--qa-shadow)}
+.field{display:grid;gap:5px;margin:12px 0;font-size:11px;font-weight:600;color:#64646e}.field input,.field select{width:100%;font-weight:400;font-size:12px}.field small{font-weight:400;color:var(--qa-muted);font-size:10px;line-height:1.5}
+.remember-option{display:flex;gap:8px;align-items:center;font-size:11px;margin:16px 0 8px}.remember-option input{accent-color:var(--qa-accent);box-shadow:none}
+.security-notice{color:var(--qa-muted);font-size:10px;line-height:1.6;margin:0 0 14px}.save-button{width:100%}
+.settings-status{color:#48836a;font-size:11px;margin:12px 0;line-height:1.6;overflow-wrap:anywhere}.settings-status:empty{display:none}.settings-status.is-error{color:var(--qa-danger)}
+.empty-state{margin:0;padding:22px 18px;color:var(--qa-muted);background:white;border:1px dashed var(--qa-line);border-radius:14px;font-size:12px;text-align:center}
+footer{color:#898992;font-size:10px;text-align:center;padding:16px 0 0}
+html.is-dashboard{width:auto;min-width:0}
+.is-dashboard body{width:auto;min-width:0}
+.is-dashboard .app-shell{max-width:1000px;margin:0 auto;padding:40px 32px}
+.is-dashboard .app-header{margin-bottom:28px}
+.is-dashboard .profile-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.is-dashboard .editor-card{max-width:640px;margin:24px auto 0}
+@media(max-width:700px){.is-dashboard .app-shell{padding:20px}.is-dashboard .profile-list{grid-template-columns:1fr}}
+@media(max-width:400px){.is-dashboard .profile-card{flex-direction:column;align-items:stretch}.is-dashboard .profile-actions{width:100%;justify-content:flex-start}.is-dashboard .profile-actions .qa-secondary,.is-dashboard .profile-actions .active-pill{width:auto}.is-dashboard .app-header{gap:8px}.is-dashboard h1{font-size:18px}}

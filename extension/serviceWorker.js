@@ -1,14 +1,41 @@
-const API_URL = "http://localhost:3000/api/generate-zhihu-questions";
-const REQUEST_TIMEOUT_MS = 200000;
-const API_KEY_SESSION_STORAGE_KEY = "modelApiKey";
+import { generateQuestions } from "./modelClient.js";
+import { activeModelConfig } from "./modelProfiles.js";
+chrome.storage.local?.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (["CLEAR_ZHIHU_DRAFT", "UPDATE_ZHIHU_DRAFT_TITLE"].includes(message?.type)) {
+    if (!_sender.tab?.id || !_sender.url?.startsWith("https://www.zhihu.com/")) return;
+    updateDraftLifecycle(message, _sender.tab.id).then((data) => sendResponse({ ok: true, data }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.type === "GET_ACTIVE_MODEL") {
+    activeModelConfig().then(({ model, provider }) => sendResponse({ ok: true, data: { model, provider } }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.type === "OPEN_MODEL_SETTINGS") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard") }).then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false, error: "无法打开模型面板。" }));
+    return true;
+  }
+  if (message?.type === "OPEN_ZHIHU_DRAFT") {
+    openZhihuDraft(message.payload).then((data) => sendResponse({ ok: true, data }))
+      .catch(() => sendResponse({ ok: false, error: "无法打开知乎草稿，请重试。" }));
+    return true;
+  }
+  if (message?.type === "GET_ZHIHU_DRAFT") {
+    if (!_sender.tab?.id || !_sender.url?.startsWith("https://www.zhihu.com/")) return;
+    chrome.storage.session.get(`zhihuDraft:${_sender.tab.id}`)
+      .then((stored) => sendResponse({ ok: true, data: stored[`zhihuDraft:${_sender.tab.id}`] || null }))
+      .catch(() => sendResponse({ ok: false, error: "读取草稿失败" }));
+    return true;
+  }
   if (message?.type !== "GENERATE_ZHIHU_QUESTIONS") {
     return undefined;
   }
 
-  withSessionApiKey(message.payload)
-    .then(requestQuestions)
+  requestQuestions(message.payload)
     .then((data) => sendResponse({ ok: true, data }))
     .catch((error) => {
       sendResponse({
@@ -20,56 +47,58 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-async function withSessionApiKey(payload) {
-  if (payload?.modelConfig?.provider === "codex-cli") return payload;
-  const stored = await chrome.storage.session.get(API_KEY_SESSION_STORAGE_KEY);
-  const apiKey = stored[API_KEY_SESSION_STORAGE_KEY];
-  return {
-    ...payload,
-    modelConfig: {
-      ...payload?.modelConfig,
-      apiKey: typeof apiKey === "string" ? apiKey : "",
-    },
-  };
+async function updateDraftLifecycle(message, tabId) {
+  const key = `zhihuDraft:${tabId}`;
+  const stored = await chrome.storage.session.get(key);
+  const draft = stored[key];
+  if (!draft || draft.createdAt !== message.createdAt) return { cleared: false };
+  if (message.type === "CLEAR_ZHIHU_DRAFT") { await chrome.storage.session.remove(key); return { cleared: true }; }
+  if (typeof message.publishedTitle === "string" && message.publishedTitle.trim()) {
+    await chrome.storage.session.set({ [key]: { ...draft, publishedTitle: message.publishedTitle.trim().slice(0, 500) } });
+  }
+  return { cleared: false };
 }
+
+async function openZhihuDraft(payload) {
+  if (typeof payload?.question !== "string" || !payload.question.trim()) throw new Error("缺少标题");
+  const draft = {
+    question: payload.question.trim().slice(0, 500),
+    description: String(payload.description || "").slice(0, 3000),
+    keywords: Array.isArray(payload.keywords) ? payload.keywords.filter((x) => typeof x === "string").slice(0, 5).map((x) => x.slice(0, 100)) : [],
+    sourceUrl: safeSourceUrl(payload.sourceUrl),
+    createdAt: Date.now(),
+  };
+  // Bind each draft to its destination tab; never put its contents in a URL.
+  const tab = await chrome.tabs.create({ url: "about:blank" });
+  try {
+    await chrome.storage.session.set({ [`zhihuDraft:${tab.id}`]: draft });
+    await chrome.tabs.update(tab.id, { url: "https://www.zhihu.com/" });
+    return { tabId: tab.id };
+  } catch (error) {
+    await chrome.storage.session.remove(`zhihuDraft:${tab.id}`);
+    throw error;
+  }
+}
+
+function safeSourceUrl(value) {
+  try {
+    if (typeof value !== "string" || value.length > 4096) return "";
+    const url = new URL(value);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password) return "";
+    url.hash = "";
+    return url.href;
+  } catch { return ""; }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`zhihuDraft:${tabId}`));
 
 async function requestQuestions(payload) {
-  let response;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
+  // Read settings in the trusted background, never use a page-supplied API URL or key.
+  const config = await activeModelConfig();
+  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
   try {
-    response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new Error("生成请求超时，请稍后重试。");
-    }
-    throw new Error("无法连接本地后端。请确认已运行 npm start，并且服务地址为 http://localhost:3000。");
+    return await generateQuestions(payload, config);
   } finally {
-    clearTimeout(timeout);
-  }
-
-  const data = await readJsonResponse(response);
-  if (!response.ok) {
-    throw new Error(data.error || `请求失败（HTTP ${response.status}）。`);
-  }
-
-  if (!Array.isArray(data.items) || data.items.length === 0) {
-    throw new Error("后端没有返回问题列表，请重试。");
-  }
-
-  return data;
-}
-
-async function readJsonResponse(response) {
-  try {
-    return await response.json();
-  } catch {
-    return {};
+    clearInterval(keepAlive);
   }
 }

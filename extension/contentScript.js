@@ -4,7 +4,6 @@
   }
   globalThis.__ZH_QA_FLOATING_ASSISTANT_LOADED__ = true;
 
-  const MODEL_CONFIG_STORAGE_KEY = "modelConfig";
   let lastSelectedText = "";
   let isAnalyzing = false;
 
@@ -21,19 +20,22 @@
     <section class="panel" aria-label="知乎提问助手">
       <header class="panel-header">
         <div>
-          <p class="eyebrow">ZH QUESTION LAB</p>
+          <p class="eyebrow">QUESTION LAB</p>
           <h1>知乎提问助手</h1>
         </div>
-        <button class="close-button" type="button" aria-label="收起面板">×</button>
+        <button class="close-button qa-quiet" type="button" aria-label="收起面板">收起</button>
       </header>
       <div class="panel-body">
+        <div class="panel-toolbar">
+        <button class="model-switch qa-secondary" type="button">选择模型</button>
         <button class="analyze-button" type="button">分析当前网页</button>
+        </div>
         <div class="loading is-hidden" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
           <span>正在生成问题，已有结果会继续保留…</span>
         </div>
         <div class="error is-hidden" role="alert"></div>
-        <div class="empty-state">点击上方按钮，生成 6 个问题和对应关键词。</div>
+        <div class="empty-state">生成 6 个提问草稿，可编辑标题、文案和话题建议后去知乎提问。</div>
         <div class="results" aria-live="polite"></div>
       </div>
     </section>
@@ -47,8 +49,17 @@
   const errorElement = shadow.querySelector(".error");
   const emptyState = shadow.querySelector(".empty-state");
   const resultsElement = shadow.querySelector(".results");
+  const modelSwitch = shadow.querySelector(".model-switch");
+  modelSwitch.onclick = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS" });
+  function refreshActiveModel() {
+    chrome.runtime.sendMessage({ type: "GET_ACTIVE_MODEL" }).then((reply) => {
+      modelSwitch.textContent = reply?.data?.model ? `模型 · ${reply.data.model}` : "选择模型";
+      modelSwitch.title = reply?.data?.model ? `当前模型：${reply.data.model}，点击切换` : "打开模型设置";
+    }).catch(() => {});
+  }
+  refreshActiveModel();
 
-  ball.addEventListener("click", () => panel.classList.toggle("is-open"));
+  ball.addEventListener("click", () => { panel.classList.toggle("is-open"); refreshActiveModel(); });
   closeButton.addEventListener("click", () => panel.classList.remove("is-open"));
   analyzeButton.addEventListener("click", analyzeCurrentPage);
 
@@ -58,6 +69,7 @@
     if (isAnalyzing) return;
 
     setLoading(true);
+    refreshActiveModel();
     showError("");
 
     try {
@@ -66,17 +78,16 @@
         throw new Error("当前页面正文较少，可以先选中一段文字再分析。");
       }
 
-      const modelConfig = await getStoredModelConfig();
       const response = await chrome.runtime.sendMessage({
         type: "GENERATE_ZHIHU_QUESTIONS",
-        payload: { ...pageData, modelConfig },
+        payload: pageData,
       });
 
       if (!response?.ok) {
         throw new Error(response?.error || "生成问题失败，请重试。");
       }
 
-      renderResults(response.data.items);
+      renderResults(response.data.items, pageData.url);
     } catch (error) {
       showError(error instanceof Error ? error.message : "发生未知错误，请重试。");
     } finally {
@@ -142,13 +153,7 @@
     }
   }
 
-  async function getStoredModelConfig() {
-    const stored = await chrome.storage.local.get(MODEL_CONFIG_STORAGE_KEY);
-    const value = stored[MODEL_CONFIG_STORAGE_KEY];
-    return value && typeof value === "object" ? value : {};
-  }
-
-  function renderResults(items) {
+  function renderResults(items, sourceUrl) {
     resultsElement.replaceChildren();
     emptyState.classList.add("is-hidden");
 
@@ -161,69 +166,57 @@
 
       const number = document.createElement("span");
       number.className = "number";
-      number.textContent = String(index + 1).padStart(2, "0");
+      number.textContent = `问题 ${String(index + 1).padStart(2, "0")}`;
 
-      const copyButton = document.createElement("button");
-      copyButton.className = "copy-button";
-      copyButton.type = "button";
-      copyButton.textContent = "复制问题";
-      copyButton.addEventListener("click", () => copyWithFeedback(copyButton, item.question));
+      heading.append(number);
 
-      heading.append(number, copyButton);
-
-      const question = document.createElement("h2");
-      question.textContent = item.question;
-
-      const keywords = document.createElement("div");
-      keywords.className = "keywords";
-      item.keywords.slice(0, 5).forEach((keyword) => {
-        const chip = document.createElement("button");
-        chip.className = "keyword-chip";
-        chip.type = "button";
-        chip.textContent = keyword;
-        chip.title = `复制关键词：${keyword}`;
-        chip.setAttribute("aria-label", `复制关键词：${keyword}`);
-        chip.addEventListener("click", () => copyWithFeedback(chip, keyword));
-        keywords.append(chip);
+      const titleInput = document.createElement("textarea");
+      titleInput.className = "draft-field draft-title";
+      titleInput.setAttribute("aria-label", `问题 ${index + 1} 标题`);
+      titleInput.value = item.question;
+      titleInput.maxLength = 500;
+      const descriptionInput = document.createElement("textarea");
+      descriptionInput.className = "draft-field draft-description";
+      descriptionInput.setAttribute("aria-label", `问题 ${index + 1} 描述`);
+      descriptionInput.placeholder = "补充提问背景与讨论点";
+      descriptionInput.value = item.description || "";
+      descriptionInput.maxLength = 3000;
+      const topicLabel = document.createElement("label");
+      topicLabel.className = "qa-label topic-label";
+      topicLabel.textContent = "话题建议";
+      topicLabel.title = "进入知乎后自动匹配真实话题，由你审核";
+      const topicInput = document.createElement("input");
+      topicInput.className = "draft-field";
+      topicInput.setAttribute("aria-label", `问题 ${index + 1} 话题建议`);
+      topicInput.value = item.keywords.join("、");
+      topicLabel.append(topicInput);
+      const openButton = document.createElement("button");
+      openButton.className = "qa-primary open-button";
+      openButton.textContent = "去知乎提问";
+      openButton.addEventListener("click", async () => {
+        openButton.disabled = true;
+        try {
+          const reply = await chrome.runtime.sendMessage({ type: "OPEN_ZHIHU_DRAFT", payload: {
+            question: titleInput.value,
+            description: descriptionInput.value,
+            sourceUrl,
+            keywords: topicInput.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
+          }});
+          if (!reply?.ok) throw new Error(reply?.error || "打开草稿失败");
+        } catch (error) { showError(error.message); }
+        finally { openButton.disabled = false; }
       });
-
-      card.append(heading, question, keywords);
+      card.append(heading, titleInput, descriptionInput, topicLabel, openButton);
       resultsElement.append(card);
-    });
-  }
-
-  async function copyWithFeedback(button, text) {
-    const originalLabel = button.textContent;
-    try {
-      await copyText(text);
-      button.textContent = "已复制";
-    } catch {
-      button.textContent = "复制失败";
-    }
-    window.setTimeout(() => {
-      button.textContent = originalLabel;
-    }, 1400);
-  }
-
-  async function copyText(text) {
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(text);
-        return;
-      } catch {
-        // 部分网页或浏览器环境会暴露 Clipboard API，但拒绝实际写入，继续使用兼容方案。
+      const fitField = (field, min, max) => {
+        field.style.height = "auto";
+        field.style.height = `${Math.max(min, Math.min(max, field.scrollHeight + 2))}px`;
+      };
+      for (const [field, min, max] of [[titleInput, 64, 150], [descriptionInput, 100, 180]]) {
+        fitField(field, min, max);
+        field.addEventListener("input", () => fitField(field, min, max));
       }
-    }
-
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.append(textarea);
-    textarea.select();
-    const copied = document.execCommand("copy");
-    textarea.remove();
-    if (!copied) throw new Error("复制失败");
+    });
   }
 
   function setLoading(loading) {
@@ -248,75 +241,28 @@
   }
 
   function getStyles() {
-    return `
-      :host { all: initial; }
-      * { box-sizing: border-box; }
-      button { font: inherit; }
-      .floating-ball, .panel {
-        font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-      }
-      .floating-ball {
-        position: fixed; right: 22px; bottom: 24px; z-index: 2147483647;
-        width: 56px; height: 56px; border: 0; border-radius: 50%; cursor: pointer;
-        color: #fff; background: linear-gradient(145deg, #1684ff, #0057dc);
-        box-shadow: 0 12px 28px rgba(0, 91, 220, .32); font-size: 22px; font-weight: 800;
-        transition: transform .18s ease, box-shadow .18s ease;
-      }
-      .floating-ball:hover { transform: translateY(-2px); box-shadow: 0 15px 32px rgba(0, 91, 220, .4); }
-      .panel {
-        position: fixed; right: 22px; bottom: 92px; z-index: 2147483646;
-        display: flex; flex-direction: column; width: min(390px, calc(100vw - 28px));
-        max-height: min(720px, calc(100vh - 116px)); overflow: hidden;
-        color: #172033; background: #f5f8fc; border: 1px solid rgba(207, 218, 234, .95);
-        border-radius: 18px; box-shadow: 0 24px 64px rgba(24, 39, 75, .22);
-        opacity: 0; pointer-events: none; transform: translateY(12px) scale(.98);
-        transition: opacity .18s ease, transform .18s ease;
-      }
-      .panel.is-open { opacity: 1; pointer-events: auto; transform: none; }
-      .panel-header {
-        display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto;
-        padding: 16px 17px 14px; color: #fff;
-        background: linear-gradient(135deg, #172b4d, #0066ff);
-      }
-      .eyebrow { margin: 0 0 3px; font-size: 9px; font-weight: 800; letter-spacing: .14em; opacity: .74; }
-      h1 { margin: 0; font-size: 17px; line-height: 1.25; }
-      .close-button {
-        width: 30px; height: 30px; border: 0; border-radius: 8px; cursor: pointer;
-        color: #fff; background: rgba(255, 255, 255, .14); font-size: 22px; line-height: 1;
-      }
-      .panel-body { min-height: 0; overflow-y: auto; padding: 14px; }
-      .analyze-button {
-        position: sticky; top: 0; z-index: 2; width: 100%; border: 0; border-radius: 11px;
-        padding: 11px 14px; cursor: pointer; color: #fff; background: #0066ff;
-        box-shadow: 0 8px 18px rgba(0, 102, 255, .2); font-size: 13px; font-weight: 750;
-      }
-      .analyze-button:disabled { cursor: wait; opacity: .68; }
-      .loading, .error, .empty-state { margin-top: 11px; border-radius: 10px; padding: 10px 11px; font-size: 12px; line-height: 1.55; }
-      .loading { display: flex; align-items: center; gap: 8px; color: #315179; background: #eaf2ff; }
-      .spinner { width: 14px; height: 14px; border: 2px solid rgba(0, 102, 255, .2); border-top-color: #0066ff; border-radius: 50%; animation: spin .8s linear infinite; }
-      .error { color: #9b2c2c; background: #fff0f0; border: 1px solid #ffd6d6; }
-      .empty-state { color: #7b879b; background: #fff; border: 1px dashed #d8e0eb; text-align: center; }
-      .results { display: grid; gap: 10px; margin-top: 11px; }
-      .result-card { padding: 13px; border: 1px solid #e0e7f1; border-radius: 12px; background: #fff; box-shadow: 0 6px 18px rgba(31, 46, 75, .05); }
-      .result-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-      .number { color: #0066ff; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
-      .copy-button { border: 1px solid #dce3ee; border-radius: 7px; padding: 5px 8px; cursor: pointer; color: #47546b; background: #fff; font-size: 10px; font-weight: 700; }
-      .copy-button:hover { border-color: #8db9fb; color: #0058dc; background: #f5f9ff; }
-      h2 { margin: 9px 0 10px; color: #172033; font-size: 15px; line-height: 1.55; font-weight: 750; }
-      .keywords { display: flex; flex-wrap: wrap; gap: 6px; }
-      .keyword-chip {
-        border: 1px solid transparent; border-radius: 999px; padding: 4px 8px; cursor: pointer;
-        color: #315179; background: #edf4ff; font-size: 10px; line-height: 1.3;
-        transition: color .15s ease, background .15s ease, border-color .15s ease;
-      }
-      .keyword-chip:hover { color: #0058dc; background: #e0edff; border-color: #a9cafd; }
-      .keyword-chip:focus-visible { outline: 2px solid #0066ff; outline-offset: 2px; }
-      .is-hidden { display: none !important; }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      @media (max-width: 520px) {
-        .floating-ball { right: 14px; bottom: 16px; }
-        .panel { right: 14px; bottom: 82px; max-height: calc(100vh - 100px); }
-      }
+    return `:host{all:initial} ${globalThis.ZhihuUiTheme || ""}
+      button,input,textarea{font-family:inherit}
+      .floating-ball{position:fixed;right:22px;bottom:24px;z-index:2147483647;width:48px;height:48px;border:1px solid #dcd8ff;border-radius:16px;color:var(--qa-accent);background:white;box-shadow:var(--qa-shadow);font-size:20px;font-weight:600}
+      .floating-ball:hover{background:var(--qa-soft)}
+      .panel{position:fixed;right:22px;bottom:86px;z-index:2147483646;display:flex;flex-direction:column;width:min(360px,calc(100vw - 28px));max-height:min(700px,calc(100vh - 108px));overflow:hidden;color:var(--qa-ink);background:var(--qa-bg);border:1px solid var(--qa-line);border-radius:18px;box-shadow:0 4px 8px #21213408,0 20px 60px #21213424;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .18s,transform .18s}
+      .panel.is-open{opacity:1;pointer-events:auto;transform:none}
+      .panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--qa-line);background:#fafafd}
+      .eyebrow{margin:0 0 2px;color:var(--qa-muted);font-size:9px;font-weight:600;letter-spacing:.12em}h1{margin:0;font-size:18px;letter-spacing:-.03em;line-height:1.4}
+      .panel-body{min-height:0;overflow:auto;padding:12px}
+      .panel-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
+      .model-switch{min-width:0;margin:0;text-align:left;font-size:11px;color:var(--qa-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px 10px}
+      .analyze-button{border:1px solid var(--qa-accent);border-radius:10px;padding:9px 12px;color:#fff;background:var(--qa-accent);font-size:12px;font-weight:600;white-space:nowrap}
+      .analyze-button:hover{background:#5140eb}.loading,.error,.empty-state{margin-top:12px;padding:12px 14px;border-radius:12px;font-size:12px;line-height:1.6}
+      .loading{background:var(--qa-soft);color:#5140a9}.spinner{display:none}.error{color:var(--qa-danger);background:#fff1f2;border:1px solid #f1d4db}.empty-state{background:white;color:var(--qa-muted);border:1px dashed var(--qa-line)}
+      .results{display:grid;gap:10px;margin-top:12px}.result-card{padding:14px;background:white;border:1px solid var(--qa-line);border-radius:14px;box-shadow:0 2px 6px #21213404}
+      .number{font-size:10px;font-weight:600;color:var(--qa-muted);letter-spacing:.08em}.result-heading{margin-bottom:8px}
+      .draft-field{display:block;width:100%;font:inherit;line-height:1.7;resize:vertical;margin:0 0 10px}
+      .draft-title{font-size:14px;font-weight:600;min-height:64px;border-color:transparent;background:#fafafd;padding:8px 10px}
+      .draft-description{min-height:100px;font-size:12px;border-color:transparent;padding:6px 4px;background:white;line-height:1.75}
+      .topic-label{margin-top:10px}.topic-label input{font-size:11px;font-weight:400;background:var(--qa-soft);border-color:transparent;margin-top:6px;line-height:1.6}
+      .open-button{width:100%;font-size:12px;margin-top:4px}
+      @media(max-width:520px){.floating-ball{right:14px;bottom:16px}.panel{right:14px;bottom:76px;max-height:calc(100vh - 94px)}}
     `;
   }
 })();

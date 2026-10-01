@@ -1,26 +1,14 @@
 {
-  "name": "zhihu-question-assistant-mvp",
-  "version": "1.0.0",
+  "name": "zhihu-question-assistant",
+  "version": "2.1.2",
   "private": true,
   "type": "module",
-  "description": "把当前网页内容转换成多个适合知乎讨论的问题角度。",
+  "description": "无需本地服务的知乎提问 Chrome 扩展",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "build:companion:macos": "node scripts/build-macos-companion.mjs",
-    "build:companion:macos:x64": "node scripts/build-macos-companion.mjs --arch=x64",
-    "build:companion:windows:x64": "node scripts/build-windows-companion.mjs",
-    "check": "node --check server/index.js && node --check extension/serviceWorker.js && node --check extension/popup.js && node --check extension/contentScript.js",
-    "test": "node --test"
+    "check": "node --check extension/modelClient.js && node --check extension/modelProfiles.js && node --check extension/uiTheme.js && node --check extension/serviceWorker.js && node --check extension/popup.js && node --check extension/contentScript.js && node --check extension/zhihuComposer.js && node --check extension/zhihuTopics.js && node --check extension/zhihuDraftLifecycle.js && node --check extension/zhihuDraft.js",
+    "test": "node --test test/*.test.js",
+    "preview:draft": "node scripts/preview-draft.mjs",
+    "build": "node scripts/build-extension.mjs"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "openai": "^6.42.0",
-    "zod": "^4.4.3"
-  }
+  "engines": { "node": ">=20" }
 }

@@ -1,322 +1,71 @@
-# 知乎提问助手 MVP
+# 知乎提问助手
 
-一个本地运行的 Chrome Manifest V3 扩展。它在普通网页右下角显示一个持久悬浮球，读取当前网页的标题、链接、描述、用户选中文本和主要正文，再请求本地 Node.js 后端生成 6 个适合知乎讨论的问题，每个问题附带 5 个关键词。
+一个无需本地服务的 Chrome 扩展。读取当前网页或选中文本，通过用户自己的 API Key 或知乎直答生成 6 个可编辑的提问草稿，包括标题、问题描述和 5 个话题建议。
 
-本项目只提供问题生成和复制，不会自动填写或发布知乎内容。
+## 安装
 
-## 项目结构
+从 [GitHub 最新版本](https://github.com/BretDeng/zhihu-question-assistant/releases/latest)下载扩展 ZIP。2.x 是跨平台纯 Chrome 扩展，不再需要下载旧版 macOS / Windows 伴侣程序。
 
-```text
-知乎提问小插件/
-├── extension/
-│   ├── manifest.json
-│   ├── popup.html
-│   ├── popup.js
-│   ├── contentScript.js
-│   ├── serviceWorker.js
-│   └── styles.css
-├── server/
-│   ├── index.js
-│   └── zhihuQuestions.schema.json
-├── .env.example
-├── .gitignore
-├── package.json
-└── README.md
-```
+1. 解压 `ZhihuQuestionAssistant-Extension-2.1.2.zip`。
+2. 打开 `chrome://extensions`，开启「开发者模式」。
+3. 点击「加载已解压的扩展程序」，选择包含 `manifest.json` 的目录。
+4. 点击扩展图标配置模型，再刷新要分析的网页。
 
-`contentScript.js` 负责在网页中注入悬浮球、持久面板、正文提取和复制交互。`serviceWorker.js` 负责从扩展后台请求本地后端，避免网页自身的跨域策略影响接口调用。工具栏 popup 只负责模型配置。
+也可以直接加载源码中的 `extension` 目录。需要 Chrome 110 或更新版本。
+不需要 Node.js、npm、终端、本地 HTTP 服务或伴侣程序。macOS、Windows 和 Linux 使用同一份扩展。
 
-## 环境要求
+## 模型设置
 
-- Node.js 20 或更高版本
-- Chrome 浏览器
-- 一个可用的 OpenAI-compatible API Key，或已登录的 Codex CLI
+- OpenAI-compatible API：填写 API Key；Base URL 留空默认 `https://api.openai.com/v1`，模型留空默认 `gpt-4o-mini`。使用其他供应商时填写 HTTPS Base URL（例如 `https://example.com/v1`，不要填写完整 `/chat/completions` 路径）和供应商提供的模型名称。
+- 知乎直答：填写 [知乎开放平台个人中心](https://developer.zhihu.com/profile) 的 Access Secret。支持 `zhida-agent`、`zhida-fast-1p5`、`zhida-thinking-1p5`，默认 `zhida-agent`。实际可用模型由账号授权决定。
 
-## 安装与配置
+保存自定义 API 配置时，Chrome 会询问该域名的访问权限。模型请求由扩展后台发送，API Key 不会交给网页脚本。
+模型面板支持最多 20 套配置，可搜索、编辑、删除和一键切换。配置名称、模型和 API 地址保存在本机，不使用同步存储。
+扩展弹窗使用固定 440 像素布局，避免首次打开时被压窄；点击右上角「展开面板」可在独立标签页使用宽版 Dashboard。网页提问面板的模型按钮直接打开宽版面板。
+勾选「记住密钥」会将对应密钥保存在扩展的本机存储，重启 Chrome 后仍可使用；这不是系统钥匙串加密保存，也不会同步到云端，请仅在可信设备启用。不勾选则只保存在当前 Chrome 会话，完全退出或重新加载扩展后需补充密钥。旧版配置自动迁移，旧会话密钥仍维持会话保存策略。编辑配置时密钥留空会保留原密钥，但更换 API 域名必须重新填写。
+网页内容会发送给你选择的模型供应商，点击「分析当前网页」时才会请求。
 
-在项目根目录运行：
+## 使用
 
-```bash
-npm install
-cp .env.example .env
-```
+网页右下角点击「问」，再点击「分析当前网页」。可以先选中一段文字，将其作为主要素材。
+生成后编辑标题、问题描述和话题建议，点击「去知乎提问」。新标签页会打开知乎，在右侧显示对应草稿面板，并尝试自动点击「提问题」、填写标题和问题描述。原网页链接以「引用来源」附在描述末尾。
+提问卡片移除重复的话题展示与「复制问题」按钮，保留可编辑内容和单一提问入口；模型面板、网页面板和知乎交接面板共用浅灰底、白卡片、紫色强调与统一控件样式。知乎交接面板的精简复制按钮仅作为自动填写失败时的备用操作。
+网页提问面板宽度调整为 360px，模型选择和分析按钮并排；标题及正文随内容自动调整高度，长内容仍可滚动编辑，减少遮挡原网页。
+自动填写只操作空白字段，不覆盖已有标题或描述；成功后草稿面板收起，避免挡住编辑区域。可以展开编辑草稿，再点击「打开提问并填写」重试。未登录或知乎页面变化时，手动打开提问框后重试，或使用复制按钮。富文本描述使用纯文本粘贴事件交给知乎编辑器处理，不直接修改其 HTML。
+打开提问框后会自动继续填写，包括登录后手动打开的提问框；兼容标题输入后表单重新渲染。富文本编辑器不接受粘贴事件时，尝试浏览器原生文本插入，不覆盖部分内容。
+内容填写后自动搜索话题建议，只绑定候选列表中名称精确匹配的真实话题（忽略空白、英文大小写和全半角差异）。保留已选话题，去重，最多 5 个；不创建新话题、不选模糊结果、不删除已有话题。面板提示已绑定和未匹配的项，审核内容与话题后点击知乎的发布按钮即可。未匹配项可能需要手动选择，也可以修改话题建议后点击「重新匹配话题」，不会修改你审核过的标题或描述。
+插件不自动发布。生成的关键词是话题建议，不是知乎话题 ID。
+话题绑定独立于描述校验：即使知乎将引用 URL 转为链接卡片、导致描述文本校验不完全一致，也会继续通过 `#` 按钮绑定话题。绑定进度和未匹配项显示在草稿面板顶部。
+草稿绑定到目标标签页，不放在 URL 中；关闭目标标签页后清除，最近 24 小时内可在该标签页重新加载。
+发布后进入标题匹配的知乎问题页，自动移除草稿面板并清除该标签页保存的草稿，刷新不会再次出现。兼容发布前修改标题；不因为点击发布、提交失败或单纯关闭提问框而提前清理。右上角「×」也可关闭并清除插件草稿，但不会修改知乎编辑器中已填的内容。「收起」只折叠，不清除。
 
-打开 `.env`，填写：
+## 接口与实现
 
-```dotenv
-MODEL_PROVIDER=openai
-ALLOWED_EXTENSION_IDS=你的_Chrome_扩展_ID
-OPENAI_API_KEY=你的真实_API_Key
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_TIMEOUT_MS=120000
-CODEX_MODEL=
-CODEX_TIMEOUT_MS=180000
-PORT=3000
-```
+扩展通过原生 `fetch` 调用 Chat Completions，没有运行时依赖。使用流式请求，本地拼接最终文案后校验 JSON；不显示或使用模型的 reasoning 内容。
+调用失败不会自动重试计费。请求最多 180 秒，响应头等待最多 25 秒；网络、额度、权限或输出格式错误会显示提示。
 
-`OPENAI_BASE_URL` 和 `OPENAI_MODEL` 都有默认值。点击浏览器工具栏中的扩展图标可以打开“模型设置”。自定义 API Base URL 和 API Key 必须成对填写，避免把后端默认 Key 发送给其他地址；全部留空时使用后端默认配置。
+[直答官方文档](https://developer.zhihu.com/docs?key=zhida)只保证 `model/messages/stream`。直答请求固定到官方域名并携带秒级时间戳，Agent 使用单条完整提示。
+截至 2026-10-01，公开文档未找到创建问题 API 或正式支持的预填文案深链。[问题回答 API](https://developer.zhihu.com/docs?key=question_answers)是读取回答列表，因此采用知乎网页草稿交接。
 
-## 使用中转站 API
+项目文件：
 
-如果中转站兼容 OpenAI Chat Completions API，可以直接修改后端 `.env`：
+- `extension/modelClient.js`：模型配置、直连请求、流式解析和草稿校验。
+- `extension/modelProfiles.js`：多套模型配置、密钥保存策略、切换与旧配置迁移。
+- `extension/uiTheme.js`：三处界面共用的视觉规范。
+- `extension/serviceWorker.js`：读取可信设置、模型调用、标签页草稿交接。
+- `extension/contentScript.js`：网页内容提取、草稿编辑面板。
+- `extension/zhihuDraft.js`：知乎页面右侧可收起的草稿面板。
+- `extension/zhihuComposer.js`：打开知乎提问框，安全填写标题、描述和引用链接。
+- `extension/zhihuTopics.js`：通过知乎网页候选列表精确匹配并绑定真实话题。
+- `extension/popup.html`、`popup.js`：模型设置。
 
-```dotenv
-OPENAI_API_KEY=sk-xxxx
-OPENAI_BASE_URL=https://your-relay-domain.com/v1
-OPENAI_MODEL=gpt-4o-mini
-```
+开发验证：`npm test`、`npm run check`。这些命令仅用于开发，用户安装扩展无需运行。
+界面回归：`npm run preview:draft`，本机 `/` 为知乎交接、`/models` 为模型面板、`/questions` 为网页提问面板。测试使用虚构密钥与内容，不调用模型、不发布问题，且服务器仅提供白名单测试文件；验证完按 Ctrl+C 关闭。它模拟富文本粘贴，不能替代在知乎真实页面上的兼容性检查。
+在有 `zip` 命令的开发机器上，运行 `npm run build` 生成分发 ZIP。ZIP 只包含扩展文件，不包含密钥、旧安装包或其他本机配置。
 
-- 中转站必须兼容 OpenAI Chat Completions API。
-- `baseURL` 通常需要包含 `/v1`，具体以中转站文档为准。
-- 模型名必须使用中转站实际支持的模型名。
-- 如果中转站不支持 `response_format: json_schema`，项目会自动降级为普通 JSON prompt 模式。
+## 从旧版更新
 
-也可以点击扩展图标，在“模型设置”中填写 API Base URL、API Key 和 Model Name 后保存。普通设置保存在 `chrome.storage.local`，API Key 只保存在 `chrome.storage.session` 中，完全退出 Chrome 后需要重新填写。若要把扩展分发给其他人，建议改用带鉴权的服务端账号体系。
+在扩展管理页面重新加载新的 `extension` 目录，然后刷新网页。已有模型配置会保留；若原会话密钥因重新加载失效，在模型面板编辑配置补充即可。旧版伴侣程序已不再需要，可使用旧安装目录附带的卸载入口移除。
+GitHub 上此前发布的 1.0.0 伴侣安装包不包含本次更新。
 
-## 使用 Codex CLI
-
-项目也支持把本机 Codex CLI 作为模型提供方。它不是 OpenAI-compatible HTTP 接口，而是由后端为每次请求运行一次非交互命令：
-
-```bash
-codex exec --ephemeral --output-schema ...
-```
-
-使用前先安装并登录 Codex CLI：
-
-```bash
-codex --version
-codex login
-codex login status
-```
-
-然后点击工具栏扩展图标，在“模型设置”中选择“本机 Codex CLI”，保存后即可通过网页悬浮球分析。API Base URL 和 API Key 在该模式下不使用；Model Name 通常留空，让 Codex CLI 使用自己的默认模型。
-
-也可以将后端默认提供方设为 Codex CLI：
-
-```dotenv
-MODEL_PROVIDER=codex-cli
-CODEX_MODEL=
-CODEX_TIMEOUT_MS=180000
-```
-
-Codex CLI 模式的实现边界：
-
-- 复用本机 `codex login` 登录态，不会读取 popup 中的 API Key。
-- 每次请求使用临时空目录、只读沙箱和临时会话。
-- 后端关闭 Codex 的 shell、浏览器、应用、插件和多代理工具，只允许其生成结构化文本。
-- OpenAI-compatible API Key 不会传入 Codex 子进程环境。
-- 默认超时为 180 秒，可通过 `CODEX_TIMEOUT_MS` 调整。
-- 这是个人电脑上的本地自动化适配，不适合作为公网代理、多用户服务或规避 API 计费的方案。
-- Codex CLI 或登录接口升级后，可能需要同步调整启动参数。
-
-## 启动后端
-
-普通启动：
-
-```bash
-npm start
-```
-
-开发模式，修改服务端代码后自动重启：
-
-```bash
-npm run dev
-```
-
-## macOS 本地伴侣程序
-
-对外分享时，可以使用已构建的 Apple Silicon 本地伴侣包。它内置 Node.js 和生产依赖，接收者无需安装 Node.js、执行 `npm install` 或手动启动后端。
-
-构建命令：
-
-```bash
-npm run build:companion:macos
-npm run build:companion:macos:x64
-npm run build:companion:windows:x64
-```
-
-第一条命令构建当前 Mac 架构的包；第二条会从 Node.js 官方下载、校验并封装 Intel `x64` 运行时。交叉构建发现 `.node` 原生依赖时会直接中止，避免生成架构混用的安装包。
-
-第三条命令会生成 Windows x64 ZIP，内置官方 `node.exe`，通过当前用户的 HKCU Run 注册表项实现无管理员权限的隐藏自启动。Windows 原生 Codex CLI 支持仍属实验性；仅安装在 WSL 中的 Codex 暂不会被伴侣程序自动调用。
-
-输出位于 `dist/`，其中 ZIP 文件可直接分享。用户解压后双击 `install.command`，安装器会：
-
-1. 把内置后端安装到 `~/Library/Application Support/ZhihuQuestionAssistant`。
-2. 创建并加载用户级 LaunchAgent。
-3. 复制固定 ID 的 Chrome 扩展。
-4. 自动检测常见位置的 Codex CLI。
-5. 通过健康检查确认后端已启动。
-
-分发版扩展的固定 ID 是 `jjlamjjlldhcbojhlkaeggbhldllcood`。当前安装包尚未进行 Apple 开发者签名和公证，适合小范围测试；公开发布前应增加 Developer ID 签名、notarization 和图形化安装器。
-
-看到以下输出即表示启动成功：
-
-```text
-知乎提问助手后端已启动：http://localhost:3000
-```
-
-也可以访问 `http://localhost:3000/health`，应返回：
-
-```json
-{"ok":true}
-```
-
-## 在 Chrome 中加载扩展
-
-1. 打开 `chrome://extensions/`。
-2. 打开右上角“开发者模式”。
-3. 点击“加载已解压的扩展程序”。
-4. 选择本项目中的 `extension` 目录，不要选择项目根目录。
-5. 复制扩展卡片上的 32 位“ID”，填入 `.env` 的 `ALLOWED_EXTENSION_IDS`，然后重启 `npm start`。
-6. 把“知乎提问助手”固定到浏览器工具栏。
-7. 打开或刷新一个普通网页，右下角会出现蓝色“问”悬浮球。
-8. 点击悬浮球展开面板，再点击“分析当前网页”。
-
-扩展安装或刷新后，需要重新加载已经打开的网页，悬浮球才会注入页面。
-
-## 使用方式
-
-1. 打开任意普通 `http/https` 网页。
-2. 可选：先选中一段最想讨论的文字。插件会记住最近一次选中的文本并优先分析它。
-3. 可选：点击工具栏扩展图标，选择 OpenAI-compatible API 或本机 Codex CLI 并保存。
-4. 点击网页右下角蓝色“问”悬浮球。
-5. 点击面板顶部永久显示的“分析当前网页”。
-6. 每条结果仅展示问题和 5 个关键词，可以点击“复制问题”，也可以直接点击任意关键词复制该关键词。
-
-面板不会因为点击网页其他区域而关闭。点击面板关闭按钮只会暂时收起，已有结果不会清空；再次点击悬浮球即可继续查看。只有再次点击“分析当前网页”并成功生成后，结果列表才会更新。
-
-## 接口说明
-
-### `POST /api/generate-zhihu-questions`
-
-请求示例：
-
-```json
-{
-  "title": "网页标题",
-  "url": "https://example.com/article",
-  "description": "网页描述",
-  "selectedText": "用户选中的文字",
-  "mainText": "网页正文",
-  "modelConfig": {
-    "provider": "openai",
-    "apiKey": "sk-xxxx",
-    "baseURL": "https://example.com/v1",
-    "model": "gpt-4o-mini"
-  }
-}
-```
-
-Codex CLI 模式只需要传递：
-
-```json
-{
-  "modelConfig": {
-    "provider": "codex-cli",
-    "model": ""
-  }
-}
-```
-
-响应示例：
-
-```json
-{
-  "items": [
-    {
-      "question": "如何看待……？",
-      "keywords": ["公共讨论", "行业趋势", "社会影响", "争议", "观点"]
-    }
-  ]
-}
-```
-
-后端会使用 `modelConfig` 中的非空配置，其余字段回退到 `.env`；但自定义 `baseURL` 和 `apiKey` 必须成对提供。`provider=openai` 时，接口先通过 JSON Schema 请求 6 条完整结果；只有当目标服务明确报告不支持该能力时，才会自动改用普通 JSON prompt 模式。`provider=codex-cli` 时，后端通过 Codex CLI 的 `--output-schema` 获取结构化结果。每条结果只包含问题和正好 5 个关键词。
-
-生成内容还会统一遵守以下排版规则：中文与英文或数字之间保留半角空格；英文专有名词使用正确大小写；中文引号统一使用「」和『』。服务端会对空格和引号做二次规范化，专有名词大小写由模型根据官方写法判断。
-
-## 调试方法
-
-### 调试悬浮面板
-
-打开目标网页的 DevTools，在 Elements 中查找 `#zhihu-question-assistant-root`。界面位于该元素的 Shadow DOM 中。修改 `contentScript.js` 后，需要在 `chrome://extensions/` 刷新扩展并重新加载目标网页。
-
-### 调试设置 popup
-
-1. 打开 `chrome://extensions/`。
-2. 找到“知乎提问助手”，点击“详细信息”。
-3. 在扩展 popup 打开时，右键 popup 空白处，选择“检查”。
-4. 在 DevTools 的 Console 和 Network 中查看错误与接口请求。
-
-修改 `extension` 内文件后，在 `chrome://extensions/` 点击扩展卡片上的刷新按钮，然后重新打开目标网页测试。
-
-### 调试 content script
-
-打开目标网页的 DevTools，在 Console 顶部的 JavaScript 上下文下拉菜单中选择扩展对应的 isolated world。也可以在 `contentScript.js` 临时增加日志，刷新扩展和目标网页后观察。
-
-### 调试后端
-
-后端错误会输出到运行 `npm start` 的终端。先确认：
-
-- `http://localhost:3000/health` 可以访问。
-- `.env` 位于项目根目录且变量名正确。
-- OpenAI 官方项目或中转站账号有余额或可用额度。
-- `OPENAI_BASE_URL` 以 `http://` 或 `https://` 开头。
-- `OPENAI_MODEL` 是 API 服务实际支持的模型名。
-- 使用 Codex CLI 时，`codex login status` 显示已经登录，且运行后端的终端可以找到 `codex` 命令。
-- Codex CLI 生成通常比直接 API 请求更慢；超时可通过 `CODEX_TIMEOUT_MS` 调整。
-
-运行静态语法检查和回归测试：
-
-```bash
-npm run check
-npm test
-```
-
-## 常见问题
-
-### 为什么不能把 API Key 放在插件里？
-
-Chrome 扩展代码会下载到用户本机，而且 Key 仍可能出现在调试工具和网络请求中。后端 `.env` 仍是更推荐的配置方式。popup 中的 Key 只在当前 Chrome 会话内存中保留，适合个人本地使用和快速切换中转站；公开产品应由受控后端持有供应商 Key，并为用户提供独立鉴权。
-
-### 为什么不自动发布到知乎？
-
-自动填写或发布涉及用户账号操作、平台规则、内容确认和误操作风险。本 MVP 只提供问题复制，让用户在发布前自行检查事实和措辞，也避免模拟登录或绕过平台交互。
-
-### 为什么有些网页正文抓不到？
-
-常见原因包括：
-
-- 页面是 `chrome://`、Chrome 扩展商店等禁止注入脚本的受限页面。
-- 正文位于跨域 iframe、PDF 阅读器或 Shadow DOM 中。
-- 页面需要登录、滚动或点击后才异步加载正文。
-- 网站结构特殊，没有可识别的 `article`、`main`、`p`、`h1`、`h2`、`h3` 内容。
-
-遇到这种情况，先在页面上选中一段文字再分析。后续也可以接入 Mozilla Readability，提升复杂网页的正文识别率。
-
-### 如何后续接入优质知乎问题样本？
-
-最简单的方式是在服务端增加少量高质量 few-shot 示例，把“网页摘要 -> 优质知乎问题 JSON”放在动态网页内容之前。样本应按领域和问题角度分类，并避免把大量样本塞入每次请求。
-
-样本增多后，建议：
-
-1. 将样本存入数据库或 JSONL 文件，并标注行业、角度和质量分。
-2. 根据当前网页主题检索 3 到 5 条最相关样本，再加入 prompt。
-3. 建立人工评价集，比较问题真实性、讨论空间、标题自然度和事实准确性。
-4. 样本涉及真实知乎内容时，确认使用权限，并避免原样复制问题。
-
-## 安全与边界
-
-- 服务只监听 `127.0.0.1`，用于本机开发。
-- 生成接口只允许 `ALLOWED_EXTENSION_IDS` 列出的 Chrome 扩展调用；未配置时默认拒绝。
-- 自定义 API Base URL 和 API Key 必须成对提供。
-- 服务端会限制 JSON 请求体和每个输入字段长度。
-- 网页正文最多使用 12000 字符。
-- API 不保存网页内容和生成结果。
-- popup 普通配置保存在 `chrome.storage.local`，Key 仅保存在不落盘的 `chrome.storage.session`，并由 service worker 在请求时临时合并。
-- 网页内容可能包含提示注入文本，因此生产化时应继续增加内容隔离、审计和输出审核。
-
-## OpenAI 实现说明
-
-OpenAI-compatible 模式使用 OpenAI 官方 JavaScript SDK 的 Chat Completions API。每次请求都会根据最终合并出的 `apiKey`、`baseURL` 和 `model` 动态创建客户端，首先尝试 `response_format: json_schema`；失败时自动降级为普通 JSON prompt，并在本地提取、解析和校验模型返回的 JSON。Codex CLI 模式使用官方 `codex exec` 非交互能力和 `--output-schema`。API Key 不会写入日志或返回给前端错误信息。
+真实模型调用需要用户密钥；知乎登录后的标题填写需要在实际页面验证。加载已解压扩展仍需启用开发者模式；若要普通用户从商店一键安装，需要另行发布到 Chrome Web Store。
