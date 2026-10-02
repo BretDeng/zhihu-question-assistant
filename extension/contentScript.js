@@ -4,11 +4,22 @@
   }
   globalThis.__ZH_QA_FLOATING_ASSISTANT_LOADED__ = true;
 
+  let assistantHost;
+  let closePanel = () => {};
+  ZhihuSiteAccess.watch(enabled => {
+    if (enabled && !assistantHost) mount();
+    if (!assistantHost) return;
+    if (enabled) assistantHost.style.removeProperty("display");
+    else { assistantHost.style.setProperty("display", "none", "important"); closePanel(); }
+  });
+  function mount() {
+
   let lastSelectedText = "";
   let isAnalyzing = false;
   let currentRequest = null;
 
   const host = document.createElement("div");
+  assistantHost = host;
   host.id = "zhihu-question-assistant-root";
   document.documentElement.append(host);
 
@@ -77,7 +88,17 @@
   }
   refreshActiveModel();
 
-  ball.addEventListener("click", () => { panel.classList.toggle("is-open"); refreshActiveModel(); });
+  const ballDrag = ZhihuDraggable.attach(ball);
+  const panelDrag = ZhihuDraggable.attach(panel, shadow.querySelector(".panel-header"));
+  closePanel = () => panel.classList.remove("is-open");
+  ball.addEventListener("click", () => {
+    panel.classList.toggle("is-open");
+    if (panel.classList.contains("is-open") && ballDrag.moved && !panelDrag.moved) {
+      const anchor = ball.getBoundingClientRect(), rect = panel.getBoundingClientRect();
+      panelDrag.moveTo(anchor.right - rect.width, anchor.top >= rect.height + 20 ? anchor.top - rect.height - 12 : anchor.bottom + 12);
+    }
+    refreshActiveModel();
+  });
   closeButton.addEventListener("click", () => panel.classList.remove("is-open"));
   analyzeButton.addEventListener("click", analyzeCurrentPage);
 
@@ -298,5 +319,6 @@
       .open-button{width:100%;font-size:12px;margin-top:4px}
       @media(max-width:520px){.floating-ball{right:14px;bottom:16px}.panel{right:14px;bottom:76px;max-height:calc(100vh - 94px)}}
     `;
+  }
   }
 })();

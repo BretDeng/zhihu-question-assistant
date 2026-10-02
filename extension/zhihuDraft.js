@@ -1,7 +1,17 @@
 (() => {
   if (globalThis.__ZH_QA_DRAFT_LOADED__) return;
   globalThis.__ZH_QA_DRAFT_LOADED__ = true;
+  let started = false, siteEnabled = true;
+  let applySiteAccess = () => {};
+  const watchSite = globalThis.ZhihuSiteAccess?.watch || (callback => callback(true));
+  watchSite(enabled => {
+    siteEnabled = enabled;
+    applySiteAccess(enabled);
+    if (enabled && !started) { started = true; mount(); }
+  });
+  function mount() {
   chrome.runtime.sendMessage({ type: "GET_ZHIHU_DRAFT" }).then((reply) => {
+    if (!siteEnabled) { started = false; return; }
     const draft = reply?.data;
     if (!draft || Date.now() - draft.createdAt > 24 * 60 * 60 * 1000) return;
     const clearSavedDraft = () => chrome.runtime.sendMessage({ type: "CLEAR_ZHIHU_DRAFT", createdAt: draft.createdAt }).catch(() => {});
@@ -21,6 +31,7 @@
       .status{color:#5140a9;background:var(--qa-soft);border:1px solid #e3dfff;border-radius:11px;padding:10px 12px;font-size:11px;line-height:1.7;margin:0 0 14px;overflow-wrap:anywhere}
     </style><section aria-label="待提问草稿"><div class="draft-header"><h2>提问草稿</h2></div><div class="details"><p class="intro">内容与话题会自动填入知乎。你只需审核后发布，已有内容不会被覆盖。</p></div></section>`;
     const section = root.querySelector("section");
+    const drag = globalThis.ZhihuDraggable?.attach(section, root.querySelector(".draft-header"));
     const details = root.querySelector(".details");
     const status = document.createElement("p");
     status.className = "status";
@@ -64,29 +75,33 @@
     bind.className = "qa-secondary";
     const attemptedTitles = new WeakSet();
     let disposed = false;
+    let operation;
     let stopLifecycle = () => {};
     // Also handle a composer opened manually after login or slow page loading.
     // Retry only once per mounted title field, never on every DOM mutation.
     const observer = new MutationObserver(() => {
-      if (disposed || fill.disabled) return;
+      if (disposed || !siteEnabled || fill.disabled) return;
       const title = ZhihuQuestionComposer.findTitle();
       if (!title || attemptedTitles.has(title)) return;
       attemptedTitles.add(title);
       fill.onclick();
     });
     fill.onclick = async () => {
-      if (disposed || fill.disabled) return;
+      if (disposed || !siteEnabled || fill.disabled) return;
       if (!fields.question.value.trim()) { status.textContent = "请先填写草稿标题。"; return; }
       fill.disabled = true;
+      operation = new AbortController();
+      const signal = operation.signal;
       setCollapsed(true);
       status.textContent = "正在打开提问并填写草稿…";
       try {
         let result;
         try {
-          result = await ZhihuQuestionComposer.fillDraft({ question: fields.question.value.trim(), description: fields.description.value, sourceUrl: fields.sourceUrl.value });
+          result = await ZhihuQuestionComposer.fillDraft({ question: fields.question.value.trim(), description: fields.description.value, sourceUrl: fields.sourceUrl.value }, { signal });
         } catch {
           result = { ok: false, message: "描述自动填写未完成，请检查已填内容。" };
         }
+        if (signal.aborted || disposed) return;
         const title = ZhihuQuestionComposer.findTitle();
         if (title) attemptedTitles.add(title);
         status.textContent = result.message;
@@ -96,7 +111,7 @@
           observer.disconnect();
           status.textContent = "正在通过 # 按钮搜索并绑定知乎话题…";
           try {
-            const topics = await ZhihuQuestionTopics.bindTopics(fields.keywords.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean), fields.question.value.trim(), showTopicProgress);
+            const topics = await ZhihuQuestionTopics.bindTopics(fields.keywords.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean), fields.question.value.trim(), showTopicProgress, { signal });
             status.textContent = `${result.ok ? "" : `${result.message} `}${ZhihuQuestionTopics.summary(topics)}`;
           } catch { status.textContent = `${result.message} 话题绑定未完成，请检查已选话题。`; }
         }
@@ -107,13 +122,14 @@
       } finally { fill.disabled = false; }
     };
     bind.onclick = async () => {
-      if (disposed || fill.disabled || bind.disabled) return;
+      if (disposed || !siteEnabled || fill.disabled || bind.disabled) return;
       const title = ZhihuQuestionComposer.findTitle();
       if (!title?.value.trim()) { status.textContent = "请先打开提问框并填写标题。"; return; }
       fill.disabled = bind.disabled = true;
+      operation = new AbortController();
       status.textContent = "正在搜索并绑定知乎话题…";
       try {
-        const topics = await ZhihuQuestionTopics.bindTopics(fields.keywords.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean), title.value.trim(), showTopicProgress);
+        const topics = await ZhihuQuestionTopics.bindTopics(fields.keywords.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean), title.value.trim(), showTopicProgress, { signal: operation.signal });
         status.textContent = ZhihuQuestionTopics.summary(topics);
       } catch { status.textContent = "话题绑定未完成，请检查已选话题或手动选择。"; }
       finally { fill.disabled = bind.disabled = false; }
@@ -133,9 +149,14 @@
     section.insertBefore(status, details);
     section.append(fill, bind, close);
     observer.observe(document.body, { childList: true, subtree: true });
+    applySiteAccess = enabled => {
+      if (disposed) return;
+      if (enabled) { host.style.removeProperty("display"); observer.observe(document.body, { childList: true, subtree: true }); }
+      else { operation?.abort(); observer.disconnect(); host.style.setProperty("display", "none", "important"); }
+    };
     function dismissDraft() {
       if (disposed) return;
-      disposed = true; observer.disconnect(); stopLifecycle(); host.remove(); clearSavedDraft();
+      disposed = true; operation?.abort(); drag?.destroy(); observer.disconnect(); stopLifecycle(); host.remove(); clearSavedDraft();
     }
     const dismiss = document.createElement("button");
     dismiss.className = "qa-quiet dismiss-draft"; dismiss.type = "button"; dismiss.textContent = "×";
@@ -149,4 +170,5 @@
     window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
     if (location.pathname === "/") fill.onclick();
   }).catch(() => {});
+  }
 })();

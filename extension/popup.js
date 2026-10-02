@@ -1,5 +1,6 @@
 import { DEFAULT_BASE_URL, resolveConfig } from "./modelClient.js";
 import { readProfiles, saveProfile, selectProfile, removeProfile } from "./modelProfiles.js";
+import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
 const theme = document.createElement("style");
 theme.textContent = globalThis.ZhihuUiTheme;
 document.head.append(theme);
@@ -20,6 +21,31 @@ $("#profileSearch").oninput = renderProfiles;
 $("#providerInput").onchange = () => { $("#modelInput").value = ""; updateProviderFields(); };
 $("#profileForm").onsubmit = saveSettings;
 load();
+loadSites();
+$("#siteForm").onsubmit = async event => {
+  event.preventDefault();
+  const button = $("#saveSitesButton");
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const sites = parseSites($("#excludedSitesInput").value);
+    await chrome.storage.local.set({ [SITE_RULES_KEY]: sites });
+    $("#excludedSitesInput").value = sites.join("\n");
+    siteStatus(sites.length ? `已排除 ${sites.length} 个域名及其子域名，已打开页面会立即生效。` : "已清空排除列表，所有网站恢复启用。");
+  } catch (error) { siteStatus(error.message || "保存失败，请重试。", true); }
+  finally { button.disabled = false; }
+};
+async function loadSites() {
+  try {
+    const stored = await chrome.storage.local.get(SITE_RULES_KEY);
+    $("#excludedSitesInput").value = Array.isArray(stored[SITE_RULES_KEY]) ? stored[SITE_RULES_KEY].join("\n") : "";
+    $("#excludedSitesInput").disabled = $("#saveSitesButton").disabled = false;
+  } catch { siteStatus("网站过滤读取失败，请重新打开面板。", true); }
+}
+function siteStatus(message, error = false) {
+  $("#siteStatus").textContent = message;
+  $("#siteStatus").classList.toggle("is-error", error);
+}
 async function load() {
   try { state = await readProfiles(); renderProfiles(); }
   catch { showStatus("读取配置失败，请重新打开扩展。", true); }

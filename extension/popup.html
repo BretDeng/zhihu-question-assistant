@@ -22,6 +22,15 @@
     </form>
   </section>
   <p id="settingsStatus" class="settings-status" role="status" aria-live="polite"></p>
+  <section class="site-card" aria-labelledby="siteHeading">
+    <div class="section-heading"><h2 id="siteHeading">网站过滤</h2><span class="site-badge">免打扰</span></div>
+    <p class="site-help">不想在某些网站看到「问」？将它们加入排除列表，悬浮按钮和提问面板就不会出现。</p>
+    <form id="siteForm">
+      <label class="field" for="excludedSitesInput"><span>不启用插件的网站</span><textarea id="excludedSitesInput" rows="4" maxlength="52000" placeholder="example.com&#10;https://news.example.org/article" spellcheck="false" disabled></textarea><small>每行一个域名或网址，自动包含子域名。比如 example.com 也会排除 news.example.com；填写 www.example.com 则仅排除该域名及其下级子域名。不支持通配符。</small></label>
+      <button id="saveSitesButton" class="qa-secondary" type="submit" disabled>保存网站过滤</button>
+      <p id="siteStatus" class="settings-status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
   <footer>打开网页右下角的「问」，即可分析内容与生成提问。</footer>
 </main>
 <script src="uiTheme.js"></script><script type="module" src="popup.js"></script>

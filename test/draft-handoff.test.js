@@ -11,7 +11,7 @@ test("drafts are tab-bound, omit credentials, and are removed when the tab close
   const updates = [];
   const chrome = {
     runtime: { onMessage: { addListener: (fn) => { listener = fn; } } },
-    storage: { session: {
+    storage: { onChanged: { addListener() {} }, session: {
       set: async (value) => Object.assign(stored, value),
       get: async (key) => ({ [key]: stored[key] }),
       remove: async (key) => { delete stored[key]; },
@@ -57,6 +57,7 @@ test("generation reads trusted saved settings instead of page-provided configura
   const chrome = {
     runtime: { onMessage: { addListener: (fn) => { listener = fn; } } },
     storage: {
+      onChanged: { addListener() {} },
       local: { get: async () => ({ modelConfig: { provider: "openai", baseURL: "https://trusted.example/v1", model: "chosen" } }) },
       session: { get: async () => ({ modelApiKey: "stored-secret" }) },
     },
@@ -80,7 +81,7 @@ test("generation reads trusted saved settings instead of page-provided configura
 
 test("page-facing model status contains only the model and provider, never credentials", async () => {
   let listener;
-  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: {}, tabs: { onRemoved: { addListener() {} } } };
+  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: { onChanged: { addListener() {} } }, tabs: { onRemoved: { addListener() {} } } };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
   vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { chrome, activeModelConfig: async () => ({ model: "chosen", provider: "openai", apiKey: "private-secret", baseURL: "https://private.example/v1" }) });
   const reply = await new Promise(resolve => listener({ type: "GET_ACTIVE_MODEL" }, {}, resolve));
@@ -91,7 +92,7 @@ test("page-facing model status contains only the model and provider, never crede
 
 test("generation progress targets the initiating document and finishes delivery before returning", async () => {
   let listener; const delivered = [];
-  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: {}, tabs: {
+  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: { onChanged: { addListener() {} } }, tabs: {
     onRemoved: { addListener() {} }, async sendMessage(id, message, options) { delivered.push({ id, message, options }); }
   } };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");

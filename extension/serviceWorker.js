@@ -1,8 +1,15 @@
 import { generateQuestions } from "./modelClient.js";
 import { activeModelConfig } from "./modelProfiles.js";
+import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
 chrome.storage.local?.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "GET_SITE_ACCESS") {
+    if (!_sender.url || !_sender.tab) return;
+    siteEnabled(_sender.url).then(enabled => sendResponse({ ok: true, data: { enabled } }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (["CLEAR_ZHIHU_DRAFT", "UPDATE_ZHIHU_DRAFT_TITLE"].includes(message?.type)) {
     if (!_sender.tab?.id || !_sender.url?.startsWith("https://www.zhihu.com/")) return;
     updateDraftLifecycle(message, _sender.tab.id).then((data) => sendResponse({ ok: true, data }))
@@ -45,6 +52,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     });
 
   return true;
+});
+
+async function siteEnabled(url) {
+  const stored = await chrome.storage.local.get(SITE_RULES_KEY);
+  return !isSiteExcluded(url, stored[SITE_RULES_KEY]);
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[SITE_RULES_KEY]) return;
+  chrome.tabs.query({}).then(tabs => Promise.allSettled(tabs.map(tab =>
+    chrome.tabs.sendMessage(tab.id, { type: "SITE_RULES_CHANGED" })
+  ))).catch(() => {});
 });
 
 async function updateDraftLifecycle(message, tabId) {
@@ -93,6 +111,7 @@ function safeSourceUrl(value) {
 chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`zhihuDraft:${tabId}`));
 
 async function requestQuestions(payload, sender = {}, requestId) {
+  if (sender.url && !await siteEnabled(sender.url)) throw new Error("此网站已停用插件，可在面板的网站过滤中恢复。");
   // Read settings in the trusted background, never use a page-supplied API URL or key.
   const config = await activeModelConfig();
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);

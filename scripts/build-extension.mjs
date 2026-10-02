@@ -9,7 +9,7 @@ const manifest = JSON.parse(await readFile(path.join(root, "extension/manifest.j
 const name = `ZhihuQuestionAssistant-Extension-${manifest.version}.zip`;
 await mkdir(path.join(root, "dist"), { recursive: true });
 const destination = path.join(root, "dist", name);
-const files = ["manifest.json", "modelClient.js", "modelProfiles.js", "uiTheme.js", "serviceWorker.js", "popup.html", "popup.js", "styles.css", "contentScript.js", "zhihuComposer.js", "zhihuTopics.js", "zhihuDraftLifecycle.js", "zhihuDraft.js"];
+const files = ["manifest.json", "modelClient.js", "modelProfiles.js", "uiTheme.js", "siteRules.js", "siteAccess.js", "draggable.js", "serviceWorker.js", "popup.html", "popup.js", "styles.css", "contentScript.js", "zhihuComposer.js", "zhihuTopics.js", "zhihuDraftLifecycle.js", "zhihuDraft.js"];
 const result = spawnSync("zip", ["-q", "-X", destination, ...files], { cwd: path.join(root, "extension"), stdio: "inherit" });
 if (result.error || result.status !== 0) throw new Error("ZIP 打包失败，请确认开发机器安装了 zip 命令。");
 console.log(destination);

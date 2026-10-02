@@ -1,12 +1,25 @@
 # 知乎提问助手
 
-一个无需本地服务的 Chrome 扩展。读取当前网页或选中文本，通过用户自己的 API Key 或知乎直答生成 6 个可编辑的提问草稿，包括标题、问题描述和 5 个话题建议。
+把正在阅读的网页，变成值得讨论的知乎问题。
+
+使用自己的 **OpenAI 兼容 API Key 或知乎直答 Access Secret**，将网页或选中文本转为 6 个可编辑的提问草稿，包括标题、背景描述和话题建议；再送到知乎尝试填写与匹配真实话题，**最后由你审核发布**。
+
+纯 Chrome 扩展，无需本地服务器、Codex CLI、伴侣程序或常驻终端。macOS（Intel / Apple Silicon）、Windows、Linux 使用同一份 ZIP。API 请求直接发往所选模型供应商，并非离线运行模型。
+
+## v2.1.4 · 自由拖动与网站免打扰
+
+- **自由拖动**：「问」按钮、提问助手面板和知乎草稿面板均可移动，限制在屏幕内，不影响输入编辑。
+- **网站过滤**：Dashboard / 扩展弹窗设置排除域名，包含子域名，保存后对已打开页面立即生效。
+- **安全停止**：关闭草稿或停用网站时，中止后续自动填写和话题绑定，不删除知乎已有内容。
+- 保留逐个显示草稿、多模型配置、引用链接、真实话题匹配与发布后清理等功能。
+
+[下载 v2.1.4 ZIP](https://github.com/BretDeng/zhihu-question-assistant/releases/download/v2.1.4/ZhihuQuestionAssistant-Extension-2.1.4.zip) · [发布说明](https://github.com/BretDeng/zhihu-question-assistant/releases/tag/v2.1.4) · [更新记录](CHANGELOG.md)
 
 ## 安装
 
 从 [GitHub 最新版本](https://github.com/BretDeng/zhihu-question-assistant/releases/latest)下载扩展 ZIP。2.x 是跨平台纯 Chrome 扩展，不再需要下载旧版 macOS / Windows 伴侣程序。
 
-1. 解压 `ZhihuQuestionAssistant-Extension-2.1.3.zip`。
+1. 解压 `ZhihuQuestionAssistant-Extension-2.1.4.zip`，将文件夹放在固定位置。
 2. 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择包含 `manifest.json` 的目录。
 4. 点击扩展图标配置模型，再刷新要分析的网页。
@@ -17,6 +30,7 @@
 ## 模型设置
 
 - OpenAI-compatible API：填写 API Key；Base URL 留空默认 `https://api.openai.com/v1`，模型留空默认 `gpt-4o-mini`。使用其他供应商时填写 HTTPS Base URL（例如 `https://example.com/v1`，不要填写完整 `/chat/completions` 路径）和供应商提供的模型名称。
+- OpenRouter：Base URL 填写 `https://openrouter.ai/api/v1`，模型使用该平台提供的完整模型 ID。**不要填写 `https://openrouter.ai/api/v1/chat/completions`**，当前版本会再次追加端点路径，导致请求失败。
 - 知乎直答：填写 [知乎开放平台个人中心](https://developer.zhihu.com/profile) 的 Access Secret。支持 `zhida-agent`、`zhida-fast-1p5`、`zhida-thinking-1p5`，默认 `zhida-agent`。实际可用模型由账号授权决定。
 
 保存自定义 API 配置时，Chrome 会询问该域名的访问权限。模型请求由扩展后台发送，API Key 不会交给网页脚本。
@@ -28,6 +42,8 @@
 ## 使用
 
 网页右下角点击「问」，再点击「分析当前网页」。可以先选中一段文字，将其作为主要素材。
+「问」按钮可按住鼠标自由拖动；提问助手及知乎草稿弹窗可按住顶部标题栏拖动，输入框、复制和关闭按钮仍正常操作。拖动位置仅保留在当前页面，刷新后恢复默认；窗口缩小或面板内容变长时会自动限制位置，避免拖出屏幕。
+Dashboard 和扩展弹窗底部提供「网站过滤」：每行填写一个域名或完整网址，保存后按域名排除（包括子域名，不区分路径、端口）。例如 `example.com` 包含 `news.example.com`，而 `www.example.com` 不包含根域名 `example.com`。不支持通配符，最多 200 条，配置仅保存在扩展本机存储。保存后已打开页面的入口及面板立即隐藏；删除规则并保存即可恢复。排除知乎也会停止其尚未完成的自动填写和话题绑定，但不会删除知乎编辑器里已有的内容；进行中的模型请求不会因此撤销。
 生成后编辑标题、问题描述和话题建议，点击「去知乎提问」。新标签页会打开知乎，在右侧显示对应草稿面板，并尝试自动点击「提问题」、填写标题和问题描述。原网页链接以「引用来源」附在描述末尾。
 提问卡片移除重复的话题展示与「复制问题」按钮，保留可编辑内容和单一提问入口；模型面板、网页面板和知乎交接面板共用浅灰底、白卡片、紫色强调与统一控件样式。知乎交接面板的精简复制按钮仅作为自动填写失败时的备用操作。
 网页提问面板宽度调整为 360px，模型选择和分析按钮并排；标题及正文随内容自动调整高度，长内容仍可滚动编辑，减少遮挡原网页。
@@ -54,6 +70,8 @@
 - `extension/modelClient.js`：模型配置、直连请求、流式解析和草稿校验。
 - `extension/modelProfiles.js`：多套模型配置、密钥保存策略、切换与旧配置迁移。
 - `extension/uiTheme.js`：三处界面共用的视觉规范。
+- `extension/draggable.js`：悬浮按钮和面板的拖动、点击区分与视口边界限制。
+- `extension/siteRules.js`、`siteAccess.js`：排除域名解析和当前网页的启用策略，不向网页暴露模型密钥存储。
 - `extension/serviceWorker.js`：读取可信设置、模型调用、标签页草稿交接。
 - `extension/contentScript.js`：网页内容提取、草稿编辑面板。
 - `extension/zhihuDraft.js`：知乎页面右侧可收起的草稿面板。
@@ -67,7 +85,18 @@
 
 ## 从旧版更新
 
-在扩展管理页面重新加载新的 `extension` 目录，然后刷新网页。已有模型配置会保留；若原会话密钥因重新加载失效，在模型面板编辑配置补充即可。旧版伴侣程序已不再需要，可使用旧安装目录附带的卸载入口移除。
+**下载 ZIP 或更新另一份源码目录，不会自动更新 Chrome 当前加载的扩展。**
+
+1. 将新包内容替换到原来加载的扩展文件夹，或用「加载已解压的扩展程序」选择直接包含 `manifest.json` 的新目录。源码用户选择仓库中的 `extension`，不要继续加载 `dist` 下旧版本的解压目录。
+2. 在 `chrome://extensions` 点击「重新加载」，确认版本显示 **2.1.4**。
+3. **刷新已经打开的网页**，旧网页中的脚本不会自动替换。
+
+无需先卸载，以免丢失配置。保留同一扩展身份时，本机保存的模型配置可继续使用；若会话密钥因重新加载失效，在模型面板补充即可。拖动位置刷新后会恢复默认，网站过滤规则则保存在本机。
+旧版伴侣程序已不再需要，可使用旧安装目录附带的卸载入口移除。
 GitHub 上此前发布的 1.0.0 伴侣安装包不包含本次更新。
 
 真实模型调用需要用户密钥；知乎登录后的标题填写需要在实际页面验证。加载已解压扩展仍需启用开发者模式；若要普通用户从商店一键安装，需要另行发布到 Chrome Web Store。
+
+## 已知待优化项
+
+完整 API 端点重复拼接、旧选区可能残留，以及多个设置窗口并发保存可能覆盖模型配置，尚未在 v2.1.4 修复，详见[代码检查报告](CODE_REVIEW.md)。目前请使用正确的 Base URL，切换文章后刷新网页，并避免多个设置窗口同时保存。

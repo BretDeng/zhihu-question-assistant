@@ -7,11 +7,17 @@ const initial = { modelProfiles: { activeId: "zhida", items: [
 const area = (name, defaults) => {
   let data = JSON.parse(localStorage.getItem(name) || "null") || defaults;
   const persist = () => localStorage.setItem(name, JSON.stringify(data));
-  return { async get(keys) { return structuredClone(Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map(key => [key, data[key]]))); }, async set(values) { Object.assign(data, values); persist(); }, async remove(keys) { for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key]; persist(); }, async setAccessLevel() {} };
+  return { async get(keys) { data = JSON.parse(localStorage.getItem(name) || "null") || data; return structuredClone(Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map(key => [key, data[key]]))); }, async set(values) { Object.assign(data, values); persist(); }, async remove(keys) { for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key]; persist(); }, async setAccessLevel() {} };
 };
 const progressListeners = [];
+window.addEventListener("storage", event => { if (event.key === "ui-test-local") progressListeners.forEach(listener => listener({ type: "SITE_RULES_CHANGED" })); });
 globalThis.chrome = { tabs: { async create({ url }) { location.href = url; return { id: 1 }; } }, storage: { local: area("ui-test-local", initial), session: area("ui-test-session", { modelProfileKeys: { custom: "fixture-key-not-real" } }) }, permissions: { async request() { return true; } }, runtime: { onMessage: { addListener(listener) { progressListeners.push(listener); } }, getURL() { return "/models?view=dashboard"; }, async sendMessage(message) {
   if (message.type === "GET_ACTIVE_MODEL") return { ok: true, data: { model: "zhida-agent", provider: "zhida" } };
+  else if (message.type === "GET_SITE_ACCESS") {
+    const { isSiteExcluded } = await import("/siteRules.js");
+    const { excludedSites } = await chrome.storage.local.get("excludedSites");
+    return { ok: true, data: { enabled: !isSiteExcluded(location.href, excludedSites) } };
+  }
   else if (message.type === "GENERATE_ZHIHU_QUESTIONS") {
     const items = Array.from({ length: 6 }, (_, i) => ({ question: i ? "浏览器插件如何帮助我们把碎片信息变成更好的问题？" : "当 AI 帮我们生成问题时，如何保留自己的判断与好奇心？", description: "越来越多工具能够阅读网页、提炼内容并生成提问。便利之外，我们是否也需要重新思考：一个好问题究竟来自信息整理，还是来自个人经验与判断？你会如何使用这类工具？", keywords: ["人工智能", "浏览器插件", "用户体验", "知识管理", "提问"] }));
     if (new URL(location.href).searchParams.has("progressive")) {

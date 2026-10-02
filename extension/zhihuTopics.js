@@ -24,16 +24,19 @@ globalThis.ZhihuQuestionTopics = (() => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  async function waitFor(getter, timeout) {
+  async function waitFor(getter, timeout, signal) {
     const deadline = Date.now() + timeout;
     do {
+      signal?.throwIfAborted();
       const result = getter();
       if (result) return result;
       await new Promise((resolve) => setTimeout(resolve, 120));
     } while (Date.now() < deadline);
+    signal?.throwIfAborted();
     return null;
   }
-  async function bindTopics(keywords, question, onProgress = () => {}) {
+  async function bindTopics(keywords, question, onProgress = () => {}, { signal } = {}) {
+    signal?.throwIfAborted();
     const wanted = [...new Map((Array.isArray(keywords) ? keywords : []).filter((x) => typeof x === "string" && x.trim()).map((x) => [normalize(x), x.trim().slice(0, 100)])).values()].slice(0, 5);
     const result = { bound: [], unmatched: [], reason: "" };
     if (!wanted.length) return result;
@@ -44,6 +47,7 @@ globalThis.ZhihuQuestionTopics = (() => {
     const initialInput = findInput(form);
     if (initialInput?.value.trim()) return { ...result, unmatched: wanted, reason: "话题搜索框已有输入，已保留你的操作" };
     for (let index = 0; index < wanted.length; index++) {
+      signal?.throwIfAborted();
       const keyword = wanted[index];
       onProgress({ keyword, index: index + 1, total: wanted.length });
       if (!unchanged()) { result.unmatched.push(...wanted.slice(index)); result.reason = "提问内容已变化，停止绑定"; break; }
@@ -56,18 +60,21 @@ globalThis.ZhihuQuestionTopics = (() => {
         const button = findHashButton(form);
         if (!button) { result.unmatched.push(...wanted.slice(index)); result.reason = "未找到话题选择入口"; break; }
         button.click();
-        input = await waitFor(() => unchanged() && findInput(form), 4000);
+        input = await waitFor(() => unchanged() && findInput(form), 4000, signal);
+        signal?.throwIfAborted();
       }
       if (!input || input.value.trim()) { result.unmatched.push(...wanted.slice(index)); result.reason = "话题选择器未就绪或正在编辑"; break; }
       input.focus();
       setInput(input, keyword);
       // Search results are asynchronous. Only use an exact option belonging to
       // this input's autocomplete, never the first option or a create-topic row.
-      const candidate = await waitFor(() => unchanged() && input.value === keyword && exactCandidate(input, keyword), 6000);
+      const candidate = await waitFor(() => unchanged() && input.value === keyword && exactCandidate(input, keyword), 6000, signal);
+      signal?.throwIfAborted();
       if (!unchanged() || input.value !== keyword) { result.unmatched.push(...wanted.slice(index)); result.reason = "检测到手动编辑，停止绑定"; break; }
       if (candidate) {
         candidate.click();
-        const bound = await waitFor(() => unchanged() && selected(form).find((name) => normalize(name) === normalize(keyword)), 2000);
+        const bound = await waitFor(() => unchanged() && selected(form).find((name) => normalize(name) === normalize(keyword)), 2000, signal);
+        signal?.throwIfAborted();
         if (bound) result.bound.push(bound);
         else { result.unmatched.push(...wanted.slice(index)); result.reason = "知乎未确认绑定结果，停止操作"; break; }
       } else result.unmatched.push(keyword);

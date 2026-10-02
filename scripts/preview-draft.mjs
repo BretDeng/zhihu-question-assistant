@@ -12,7 +12,7 @@ const routes = new Map([
   ["/models", ["../extension/popup.html", "text/html"]],
   ["/questions", ["../test/fixtures/questions.html", "text/html"]],
   ["/ui-fixture.js", ["../test/fixtures/ui-fixture.js", "text/javascript"]],
-  ...["popup.js", "uiTheme.js", "modelProfiles.js", "modelClient.js", "contentScript.js"].flatMap((name) => [[`/${name}`, [`../extension/${name}`, "text/javascript"]], [`/extension/${name}`, [`../extension/${name}`, "text/javascript"]]]),
+  ...["popup.js", "uiTheme.js", "siteRules.js", "siteAccess.js", "draggable.js", "modelProfiles.js", "modelClient.js", "contentScript.js"].flatMap((name) => [[`/${name}`, [`../extension/${name}`, "text/javascript"]], [`/extension/${name}`, [`../extension/${name}`, "text/javascript"]]]),
   ["/styles.css", ["../extension/styles.css", "text/css"]],
 ]);
 http.createServer(async (request, response) => {

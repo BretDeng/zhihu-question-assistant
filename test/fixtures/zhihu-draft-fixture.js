@@ -8,7 +8,14 @@ const fixtureDraft = {
   keywords: ["浏览器插件", "用户体验", "知识管理"],
   createdAt: Date.now(),
 };
-window.chrome = { runtime: { sendMessage: async (message) => {
+const siteListeners = [];
+window.addEventListener("storage", event => { if (event.key === "ui-test-local") siteListeners.forEach(listener => listener({ type: "SITE_RULES_CHANGED" })); });
+window.chrome = { runtime: { onMessage: { addListener(listener) { siteListeners.push(listener); }, removeListener() {} }, sendMessage: async (message) => {
+  if (message.type === "GET_SITE_ACCESS") {
+    const { isSiteExcluded } = await import("/siteRules.js");
+    const { excludedSites } = JSON.parse(localStorage.getItem("ui-test-local") || "{}");
+    return { ok: true, data: { enabled: !isSiteExcluded(location.href, excludedSites) } };
+  }
   if (message.type === "CLEAR_ZHIHU_DRAFT") { sessionStorage.setItem("draft-fixture-closed", "true"); return { ok: true }; }
   if (message.type === "UPDATE_ZHIHU_DRAFT_TITLE") { fixtureDraft.publishedTitle = message.publishedTitle; return { ok: true }; }
   return { data: sessionStorage.getItem("draft-fixture-closed") ? null : fixtureDraft };
