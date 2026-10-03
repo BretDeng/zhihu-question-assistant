@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { test } from "node:test";
+import * as draftPreferences from "../extension/draftPreferences.js";
 
 test("drafts are tab-bound, omit credentials, and are removed when the tab closes", async () => {
   const stored = {};
@@ -23,7 +24,7 @@ test("drafts are tab-bound, omit credentials, and are removed when the tab close
     },
   };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
-  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { chrome, URL, Date, setTimeout, clearTimeout });
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, chrome, URL, Date, setTimeout, clearTimeout });
   const send = (message, sender = {}) => new Promise((resolve) => listener(message, sender, resolve));
   await send({ type: "OPEN_ZHIHU_DRAFT", payload: { question: "First?", description: "Draft", keywords: ["Topic"], sourceUrl: "https://example.com/article#section", apiKey: "secret" } });
   await send({ type: "OPEN_ZHIHU_DRAFT", payload: { question: "Second?", keywords: [], sourceUrl: "javascript:alert(1)" } });
@@ -65,6 +66,7 @@ test("generation reads trusted saved settings instead of page-provided configura
   };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
   vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), {
+    ...draftPreferences,
     chrome,
     setInterval: () => 42,
     clearInterval: (id) => { timerCleared = id === 42; },
@@ -92,11 +94,11 @@ test("page-facing model status contains only the model and provider, never crede
 
 test("generation progress targets the initiating document and finishes delivery before returning", async () => {
   let listener; const delivered = [];
-  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: { onChanged: { addListener() {} } }, tabs: {
+  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: { local: { get: async () => ({}) }, onChanged: { addListener() {} } }, tabs: {
     onRemoved: { addListener() {} }, async sendMessage(id, message, options) { delivered.push({ id, message, options }); }
   } };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
-  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { chrome, setInterval: () => 1, clearInterval() {},
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, chrome, setInterval: () => 1, clearInterval() {},
     activeModelConfig: async () => ({ apiKey: "private" }),
     generateQuestions: async (_page, _config, _fetch, callbacks) => { callbacks.onProgress("connected"); callbacks.onItem({ question: "问题", description: "描述", keywords: [] }, 0); return { items: [] }; }
   });

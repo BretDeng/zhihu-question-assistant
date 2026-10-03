@@ -5,6 +5,15 @@
 <main class="app-shell">
   <header class="app-header"><div><p class="eyebrow">QUESTION LAB</p><h1>知乎提问助手</h1></div><button id="expandDashboardButton" class="header-tag" type="button">展开面板</button></header>
   <section class="active-card"><span class="qa-label">当前使用</span><h2 id="activeName">尚未配置模型</h2><p id="activeDetail">添加你的 API，开始把网页变成好问题。</p></section>
+  <section class="format-card" aria-labelledby="formatHeading">
+    <div class="section-heading"><h2 id="formatHeading">问题描述形式</h2><span class="site-badge">生成偏好</span></div>
+    <div class="format-switch" role="group" aria-label="问题描述形式">
+      <button id="summaryModeButton" type="button" aria-pressed="true" disabled>概括提问</button>
+      <button id="originalModeButton" type="button" aria-pressed="false" disabled>网页原文</button>
+    </div>
+    <p id="descriptionModeHint" class="site-help">标题 + 材料概括与讨论问题。</p>
+    <p id="descriptionModeStatus" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
   <div class="section-heading"><h2>我的模型 <span id="profileCount">0</span></h2><button id="addProfileButton" class="qa-secondary" type="button">添加配置</button></div>
   <input id="profileSearch" class="search-input" type="search" placeholder="搜索名称、供应商或模型…" aria-label="搜索模型配置">
   <div id="profileList" class="profile-list" aria-label="保存的模型配置"></div>

@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwErPxpzXiNyg7bDqwpuzpVWHsPn7Nf6JeZ82PJMMLZ8lEpaOWeKn7FAZtJzi807Km2F0wW5NcAVwFJWCnL95A2d+M0uqhvTRrUb7SRv5mk30+Ss80pvgdOLmh6ggflMBVCkzrgNLiPO8bUlXMAA6IT4PJweaoafLyhISVBFrxiLFWJiznXaQv1N+6dHYoDalYsVNn3v3KTEwUOCv2fjnkBz6ypqG+WUHNTFOFYq3ECec2txieq5S2SGYXkgoRh2gh5XqHQyx1/NqeARCBNcEBDtvzEiqgekPZvU8OnC8fvWbc6Z4YTB8VmrNGtOGAfNn8ScKAlsRvBnV/F7rRxkJjwIDAQAB",
   "name": "知乎提问助手",
-  "version": "2.1.4",
+  "version": "2.1.7",
   "minimum_chrome_version": "110",
-  "description": "用自己的 API Key 或知乎直答，将网页转为知乎提问草稿。支持自动填写、话题匹配、可拖动面板与网站过滤，无需本地服务。",
+  "description": "用自己的 API Key 或知乎直答，将网页转为知乎提问草稿。可选概括或已加载原文，支持自动填写、话题匹配、拖动与网站过滤，无需本地服务。",
   "permissions": ["clipboardWrite", "storage"],
   "host_permissions": ["https://api.openai.com/*", "https://developer.zhihu.com/*"],
   "optional_host_permissions": ["https://*/*"],
@@ -24,7 +24,7 @@
     },
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["uiTheme.js", "siteAccess.js", "draggable.js", "contentScript.js"],
+      "js": ["uiTheme.js", "siteAccess.js", "draggable.js", "pageText.js", "contentScript.js"],
       "run_at": "document_idle"
     }
   ]

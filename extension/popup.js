@@ -1,6 +1,7 @@
 import { DEFAULT_BASE_URL, resolveConfig } from "./modelClient.js";
 import { readProfiles, saveProfile, selectProfile, removeProfile } from "./modelProfiles.js";
 import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
+import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
 const theme = document.createElement("style");
 theme.textContent = globalThis.ZhihuUiTheme;
 document.head.append(theme);
@@ -22,6 +23,38 @@ $("#providerInput").onchange = () => { $("#modelInput").value = ""; updateProvid
 $("#profileForm").onsubmit = saveSettings;
 load();
 loadSites();
+let descriptionMode = "summary";
+let modeBusy = true;
+const modeButtons = [$("#summaryModeButton"), $("#originalModeButton")];
+loadDescriptionMode();
+modeButtons.forEach((button, index) => { button.onclick = () => saveDescriptionMode(index ? "original" : "summary"); });
+chrome.storage.onChanged?.addListener((changes, area) => {
+  if (area === "local" && changes[DESCRIPTION_MODE_KEY]) renderDescriptionMode(normalizeDescriptionMode(changes[DESCRIPTION_MODE_KEY].newValue));
+});
+function renderDescriptionMode(mode) {
+  descriptionMode = mode;
+  modeButtons[0].setAttribute("aria-pressed", String(mode === "summary"));
+  modeButtons[1].setAttribute("aria-pressed", String(mode === "original"));
+  $("#descriptionModeHint").textContent = mode === "original"
+    ? "标题 + 当前网页已加载的正文。仅加载部分时也可使用。保留原文，段落之间无空行；引用链接附在末尾。原文可在生成后编辑。"
+    : "标题 + 材料概括与讨论问题，由模型生成精简的问题描述。";
+}
+async function loadDescriptionMode() {
+  try { renderDescriptionMode(await readDescriptionMode(chrome)); modeBusy = false; modeButtons.forEach(button => { button.disabled = false; }); }
+  catch { $("#descriptionModeStatus").textContent = "读取生成偏好失败，请重新打开面板。"; }
+}
+async function saveDescriptionMode(mode) {
+  if (modeBusy || mode === descriptionMode) return;
+  modeBusy = true; modeButtons.forEach(button => { button.disabled = true; });
+  const status = $("#descriptionModeStatus");
+  try {
+    await chrome.storage.local.set({ [DESCRIPTION_MODE_KEY]: mode });
+    renderDescriptionMode(mode);
+    status.textContent = "已保存，下次分析使用此形式；已有草稿保持不变。";
+    status.classList.remove("is-error");
+  } catch { status.textContent = "保存失败，请重试。"; status.classList.add("is-error"); }
+  finally { modeBusy = false; modeButtons.forEach(button => { button.disabled = false; }); }
+}
 $("#siteForm").onsubmit = async event => {
   event.preventDefault();
   const button = $("#saveSitesButton");

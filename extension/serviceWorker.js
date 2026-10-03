@@ -1,9 +1,15 @@
 import { generateQuestions } from "./modelClient.js";
 import { activeModelConfig } from "./modelProfiles.js";
 import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
+import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription } from "./draftPreferences.js";
 chrome.storage.local?.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "GET_DESCRIPTION_MODE") {
+    readDescriptionMode(chrome).then(mode => sendResponse({ ok: true, data: { mode } }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.type === "GET_SITE_ACCESS") {
     if (!_sender.url || !_sender.tab) return;
     siteEnabled(_sender.url).then(enabled => sendResponse({ ok: true, data: { enabled } }))
@@ -28,7 +34,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "OPEN_ZHIHU_DRAFT") {
     openZhihuDraft(message.payload).then((data) => sendResponse({ ok: true, data }))
-      .catch(() => sendResponse({ ok: false, error: "无法打开知乎草稿，请重试。" }));
+      .catch(error => sendResponse({ ok: false, error: error.message || "无法打开知乎草稿，请重试。" }));
     return true;
   }
   if (message?.type === "GET_ZHIHU_DRAFT") {
@@ -59,9 +65,10 @@ async function siteEnabled(url) {
   return !isSiteExcluded(url, stored[SITE_RULES_KEY]);
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes[SITE_RULES_KEY]) return;
+  if (area !== "local" || (!changes[SITE_RULES_KEY] && !changes[DESCRIPTION_MODE_KEY])) return;
+  const type = changes[SITE_RULES_KEY] ? "SITE_RULES_CHANGED" : "DESCRIPTION_MODE_CHANGED";
   chrome.tabs.query({}).then(tabs => Promise.allSettled(tabs.map(tab =>
-    chrome.tabs.sendMessage(tab.id, { type: "SITE_RULES_CHANGED" })
+    chrome.tabs.sendMessage(tab.id, { type })
   ))).catch(() => {});
 });
 
@@ -79,9 +86,12 @@ async function updateDraftLifecycle(message, tabId) {
 
 async function openZhihuDraft(payload) {
   if (typeof payload?.question !== "string" || !payload.question.trim()) throw new Error("缺少标题");
+  const descriptionMode = normalizeDescriptionMode(payload.descriptionMode);
+  const description = descriptionMode === "original" ? originalDescription(payload.description) : String(payload.description || "").slice(0, 3000);
   const draft = {
     question: payload.question.trim().slice(0, 500),
-    description: String(payload.description || "").slice(0, 3000),
+    description, descriptionMode,
+    originalPartial: descriptionMode === "original" && payload.originalPartial === true,
     keywords: Array.isArray(payload.keywords) ? payload.keywords.filter((x) => typeof x === "string").slice(0, 5).map((x) => x.slice(0, 100)) : [],
     sourceUrl: safeSourceUrl(payload.sourceUrl),
     createdAt: Date.now(),
@@ -114,6 +124,11 @@ async function requestQuestions(payload, sender = {}, requestId) {
   if (sender.url && !await siteEnabled(sender.url)) throw new Error("此网站已停用插件，可在面板的网站过滤中恢复。");
   // Read settings in the trusted background, never use a page-supplied API URL or key.
   const config = await activeModelConfig();
+  const mode = await readDescriptionMode(chrome);
+  const decorate = prepareDescription(mode, payload);
+  // Capture the preference and original once per run. Switching the dashboard
+  // during streaming must not mix two formats or overwrite edited cards.
+  const modelPage = mode === "original" ? { ...payload, selectedText: "" } : payload;
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
   let delivery = Promise.resolve();
   const progress = (data) => {
@@ -122,12 +137,12 @@ async function requestQuestions(payload, sender = {}, requestId) {
     delivery = delivery.then(() => chrome.tabs.sendMessage(sender.tab.id, { type: "ZH_QUESTION_PROGRESS", requestId, ...data }, target)).catch(() => {});
   };
   try {
-    const result = await generateQuestions(payload, config, undefined, {
-      onItem: (item, index) => progress({ item, index }),
+    const result = await generateQuestions(modelPage, { ...config, descriptionMode: mode }, undefined, {
+      onItem: (item, index) => progress({ item: decorate(item), index }),
       onProgress: (phase) => progress({ phase }),
     });
     await delivery;
-    return result;
+    return { ...result, items: result.items.map(decorate) };
   } catch (error) {
     await delivery;
     throw error;

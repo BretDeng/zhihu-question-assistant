@@ -11,8 +11,10 @@ const routes = new Map([
   ["/extension/zhihuDraftLifecycle.js", ["../extension/zhihuDraftLifecycle.js", "text/javascript"]],
   ["/models", ["../extension/popup.html", "text/html"]],
   ["/questions", ["../test/fixtures/questions.html", "text/html"]],
+  ["/extraction", ["../test/fixtures/page-text.html", "text/html"]],
+  ["/page-text-fixture.js", ["../test/fixtures/page-text-fixture.js", "text/javascript"]],
   ["/ui-fixture.js", ["../test/fixtures/ui-fixture.js", "text/javascript"]],
-  ...["popup.js", "uiTheme.js", "siteRules.js", "siteAccess.js", "draggable.js", "modelProfiles.js", "modelClient.js", "contentScript.js"].flatMap((name) => [[`/${name}`, [`../extension/${name}`, "text/javascript"]], [`/extension/${name}`, [`../extension/${name}`, "text/javascript"]]]),
+  ...["popup.js", "uiTheme.js", "draftPreferences.js", "pageText.js", "siteRules.js", "siteAccess.js", "draggable.js", "modelProfiles.js", "modelClient.js", "contentScript.js"].flatMap((name) => [[`/${name}`, [`../extension/${name}`, "text/javascript"]], [`/extension/${name}`, [`../extension/${name}`, "text/javascript"]]]),
   ["/styles.css", ["../extension/styles.css", "text/css"]],
 ]);
 http.createServer(async (request, response) => {

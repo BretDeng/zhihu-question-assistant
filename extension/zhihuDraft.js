@@ -31,6 +31,8 @@
       .status{color:#5140a9;background:var(--qa-soft);border:1px solid #e3dfff;border-radius:11px;padding:10px 12px;font-size:11px;line-height:1.7;margin:0 0 14px;overflow-wrap:anywhere}
     </style><section aria-label="待提问草稿"><div class="draft-header"><h2>提问草稿</h2></div><div class="details"><p class="intro">内容与话题会自动填入知乎。你只需审核后发布，已有内容不会被覆盖。</p></div></section>`;
     const section = root.querySelector("section");
+    if (draft.descriptionMode === "original") root.querySelector("h2").textContent = draft.originalPartial ? "提问草稿 · 已加载原文" : "提问草稿 · 网页原文";
+    if (draft.originalPartial) root.querySelector(".intro").textContent = "描述仅包含来源网页已加载的部分正文，不是全文。内容与话题会自动填入知乎，请审核后发布。";
     const drag = globalThis.ZhihuDraggable?.attach(section, root.querySelector(".draft-header"));
     const details = root.querySelector(".details");
     const status = document.createElement("p");

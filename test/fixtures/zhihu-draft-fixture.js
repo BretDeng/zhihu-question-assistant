@@ -6,6 +6,7 @@ const fixtureDraft = {
   description: "浏览网页时，希望直接整理出可讨论的问题、补充背景，并保留原始来源，减少反复复制粘贴。哪些交互设计最能提升这个流程的效率？",
   sourceUrl: "https://example.com/article",
   keywords: ["浏览器插件", "用户体验", "知识管理"],
+  ...(new URL(location.href).searchParams.has("handoff") ? JSON.parse(localStorage.getItem("ui-test-draft") || "{}") : {}),
   createdAt: Date.now(),
 };
 const siteListeners = [];

@@ -42,6 +42,7 @@
         <button class="model-switch qa-secondary" type="button">选择模型</button>
         <button class="analyze-button" type="button">分析当前网页</button>
         </div>
+        <p class="format-status" role="status">描述形式 · 概括提问</p>
         <div class="loading is-hidden" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
           <span>正在生成问题，已有结果会继续保留…</span>
@@ -64,26 +65,35 @@
   const resultsElement = shadow.querySelector(".results");
   const modelSwitch = shadow.querySelector(".model-switch");
   const timingElement = shadow.querySelector(".timing-status");
+  const formatStatus = shadow.querySelector(".format-status");
   const loadingText = loadingElement.querySelector("span:last-child");
   function acceptItem(item, index) {
     const request = currentRequest;
     if (!request || request.received.has(index)) return;
     if (!request.startedResults) { resultsElement.replaceChildren(); request.startedResults = true; }
     renderResults([item], request.url, { append: true, startIndex: index });
+    if (item.descriptionMode) formatStatus.textContent = `描述形式 · ${item.descriptionMode === "original" ? "网页原文" : "概括提问"}${item.originalPartial ? " · 仅包含已加载部分" : ""}`;
     request.received.add(index);
     request.firstDraftMs ??= Math.round(performance.now() - request.started);
     loadingText.textContent = `已生成 ${request.received.size}/6 个草稿，可先编辑，剩余继续生成…`;
   }
   chrome.runtime.onMessage?.addListener((message) => {
+    if (message?.type === "DESCRIPTION_MODE_CHANGED") { refreshDescriptionMode(); return; }
     if (message?.type !== "ZH_QUESTION_PROGRESS" || message.requestId !== currentRequest?.id) return;
     if (message.item && Number.isInteger(message.index) && message.index >= 0 && message.index < 6) acceptItem(message.item, message.index);
     else if (message.phase === "connected" && !currentRequest.received.size) loadingText.textContent = "模型已连接，正在生成第一个草稿…";
   });
   modelSwitch.onclick = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS" });
   function refreshActiveModel() {
+    refreshDescriptionMode();
     chrome.runtime.sendMessage({ type: "GET_ACTIVE_MODEL" }).then((reply) => {
       modelSwitch.textContent = reply?.data?.model ? `模型 · ${reply.data.model}` : "选择模型";
       modelSwitch.title = reply?.data?.model ? `当前模型：${reply.data.model}，点击切换` : "打开模型设置";
+    }).catch(() => {});
+  }
+  function refreshDescriptionMode() {
+    chrome.runtime.sendMessage({ type: "GET_DESCRIPTION_MODE" }).then(reply => {
+      if (reply?.ok) formatStatus.textContent = `描述形式 · ${reply.data.mode === "original" ? "网页原文" : "概括提问"}`;
     }).catch(() => {});
   }
   refreshActiveModel();
@@ -147,6 +157,7 @@
   }
 
   function extractPageContent() {
+    const article = ZhihuPageText.extractDetailed();
     const currentSelection = cleanText(globalThis.getSelection()?.toString() || "");
     if (currentSelection) {
       lastSelectedText = currentSelection;
@@ -161,40 +172,12 @@
           "",
       ).slice(0, 1500),
       selectedText: (currentSelection || lastSelectedText).slice(0, 12000),
-      mainText: extractMainText().slice(0, 12000),
+      // Preserve the complete extracted text for local original-mode drafts.
+      // The model client applies its separate 6,000-character input budget.
+      mainText: article.text,
+      originalPartial: article.originalPartial,
+      originalUnavailableReason: article.originalUnavailableReason,
     };
-  }
-
-  function extractMainText() {
-    const preferredBlocks = [...document.querySelectorAll("article, main, [role='main']")]
-      .map(extractCleanBlock)
-      .filter((text) => text.length >= 80)
-      .sort((left, right) => right.length - left.length);
-
-    if (preferredBlocks.length > 0) {
-      return preferredBlocks[0];
-    }
-
-    return joinUniqueBlocks(
-      [...document.querySelectorAll("p, h1, h2, h3")]
-        .filter((element) => !element.closest("nav, aside, footer, form, [aria-hidden='true']"))
-        .map((element) => cleanText(element.innerText || element.textContent || ""))
-        .filter((text) => text.length >= 2),
-    );
-  }
-
-  function extractCleanBlock(element) {
-    const clone = element.cloneNode(true);
-    clone.querySelectorAll("nav, aside, footer, form, script, style, noscript, [aria-hidden='true']").forEach((item) => item.remove());
-    return cleanText(clone.textContent || "");
-  }
-
-  function joinUniqueBlocks(blocks) {
-    const unique = new Set();
-    for (const block of blocks) {
-      unique.add(block);
-    }
-    return cleanText([...unique].join("\n\n"));
   }
 
   function rememberSelectedText() {
@@ -219,7 +202,7 @@
 
       const number = document.createElement("span");
       number.className = "number";
-      number.textContent = `问题 ${String(index + 1).padStart(2, "0")}`;
+      number.textContent = `问题 ${String(index + 1).padStart(2, "0")}${item.descriptionMode === "original" ? " · 网页原文" : ""}${item.originalPartial ? " · 已加载部分" : ""}`;
 
       heading.append(number);
 
@@ -233,7 +216,7 @@
       descriptionInput.setAttribute("aria-label", `问题 ${index + 1} 描述`);
       descriptionInput.placeholder = "补充提问背景与讨论点";
       descriptionInput.value = item.description || "";
-      descriptionInput.maxLength = 3000;
+      descriptionInput.maxLength = item.descriptionLimit || 3000;
       const topicLabel = document.createElement("label");
       topicLabel.className = "qa-label topic-label";
       topicLabel.textContent = "话题建议";
@@ -252,6 +235,8 @@
           const reply = await chrome.runtime.sendMessage({ type: "OPEN_ZHIHU_DRAFT", payload: {
             question: titleInput.value,
             description: descriptionInput.value,
+            descriptionMode: item.descriptionMode || "summary",
+            originalPartial: item.originalPartial === true,
             sourceUrl,
             keywords: topicInput.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
           }});
@@ -311,6 +296,7 @@
       .loading{background:var(--qa-soft);color:#5140a9}.spinner{display:none}.error{color:var(--qa-danger);background:#fff1f2;border:1px solid #f1d4db}.empty-state{background:white;color:var(--qa-muted);border:1px dashed var(--qa-line)}
       .results{display:grid;gap:10px;margin-top:12px}.result-card{padding:14px;background:white;border:1px solid var(--qa-line);border-radius:14px;box-shadow:0 2px 6px #21213404}
       .timing-status{font-size:10px;color:var(--qa-muted);margin:10px 2px 0}.timing-status:empty{display:none}
+      .format-status{font-size:10px;color:var(--qa-muted);margin:6px 2px 0}
       .number{font-size:10px;font-weight:600;color:var(--qa-muted);letter-spacing:.08em}.result-heading{margin-bottom:8px}
       .draft-field{display:block;width:100%;font:inherit;line-height:1.7;resize:vertical;margin:0 0 10px}
       .draft-title{font-size:14px;font-weight:600;min-height:64px;border-color:transparent;background:#fafafd;padding:8px 10px}
