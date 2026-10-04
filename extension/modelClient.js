@@ -7,7 +7,8 @@ export function resolveConfig(config = {}) {
   if (!["openai", "zhida"].includes(provider)) throw new Error("请选择 API Key 或知乎直答模式，并重新保存设置。");
   const apiKey = typeof config.apiKey === "string" ? config.apiKey.trim() : "";
   if (!apiKey) throw new Error("请先在扩展设置中填写 API Key 或知乎 Access Secret。");
-  const baseURL = provider === "zhida" ? ZHIDA_BASE_URL : (config.baseURL || DEFAULT_BASE_URL).trim().replace(/\/+$/, "");
+  // Users often paste the full endpoint; the client appends /chat/completions itself.
+  const baseURL = provider === "zhida" ? ZHIDA_BASE_URL : (config.baseURL || DEFAULT_BASE_URL).trim().replace(/\/+$/, "").replace(/\/chat\/completions$/i, "");
   const url = new URL(baseURL);
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error("API Base URL 必须是无账号、查询参数和片段的 HTTPS 地址。");
   const model = config.model?.trim() || (provider === "zhida" ? "zhida-agent" : "gpt-4o-mini");
@@ -23,9 +24,15 @@ const SYSTEM_PROMPT = `你是知乎选题编辑。基于引用网页生成 6 个
 export function compactSource(page) {
   const clean = (value, limit) => typeof value === "string" ? value.replace(/\u0000/g, "").trim().slice(0, limit) : "";
   const selectedText = clean(page.selectedText, 8000);
-  const unique = [...new Set(clean(page.mainText, 24000).split(/\n+/).map(x => x.trim()).filter(Boolean))].join("\n");
+  const lines = [...new Set(clean(page.mainText, 24000).split(/\n+/).map(x => x.trim()).filter(Boolean))];
   // Selected material is primary; send only a short, non-duplicate background.
-  const background = selectedText ? unique.split(selectedText).join("").trim() : unique;
+  // A multi-paragraph selection rarely matches the body text verbatim, so drop
+  // every paragraph already covered by the selection (ignoring whitespace).
+  const squash = (value) => value.replace(/\s+/g, "");
+  const selectedKey = squash(selectedText);
+  const background = selectedText
+    ? lines.filter((line) => { const key = squash(line); return key.length < 6 || !selectedKey.includes(key); }).join("\n").split(selectedText).join("").trim()
+    : lines.join("\n");
   return { title: clean(page.title, 500), url: clean(page.url, 2048), description: clean(page.description, 800), selectedText, mainText: background.slice(0, selectedText ? 1500 : 6000) };
 }
 export function buildMessages(page, config) {
@@ -71,8 +78,15 @@ export async function generateQuestions(page, rawConfig, fetchImpl = fetch, call
     });
     clearTimeout(headerTimeout);
     if (!response.ok) {
-      const messages = { 401: "密钥无效，请检查 API Key。", 403: "账号无权访问该模型。", 429: "调用频率过高或额度不足。" };
-      throw new Error(messages[response.status] || `模型请求失败（HTTP ${response.status}）。`);
+      const messages = {
+        400: "请求被拒绝，请检查模型名称是否正确。",
+        401: "密钥无效，请检查 API Key。",
+        403: "账号无权访问该模型。",
+        404: "接口或模型不存在，请检查 API 地址（通常以 /v1 结尾）和模型名称。",
+        429: "调用频率过高或额度不足。",
+      };
+      const detail = await errorDetail(response);
+      throw new Error(`${messages[response.status] || `模型请求失败（HTTP ${response.status}）。`}${detail ? ` 服务返回：${detail}` : ""}`);
     }
     timings.headersMs = elapsed();
     callbacks.onProgress?.("connected");
@@ -90,6 +104,15 @@ export async function generateQuestions(page, rawConfig, fetchImpl = fetch, call
     if (error instanceof TypeError) throw new Error("无法连接模型 API，请检查 HTTPS 地址、网络与扩展的网站访问权限。");
     throw error;
   } finally { clearTimeout(timeout); clearTimeout(headerTimeout); }
+}
+
+async function errorDetail(response) {
+  try {
+    const body = JSON.parse((await response.text()).slice(0, 4000));
+    const message = body?.error?.message || body?.message || body?.msg;
+    // Error text is shown inside arbitrary web pages; never echo key-like tokens.
+    return typeof message === "string" ? message.replace(/[A-Za-z0-9_\-.]{20,}/g, "***").trim().slice(0, 160) : "";
+  } catch { return ""; }
 }
 
 export async function readStream(body, onContent) {
@@ -128,19 +151,38 @@ export async function readStream(body, onContent) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
+const ITEMS_PREFIX = /\{\s*"items"\s*:\s*\[/;
+// Reasoning models (DeepSeek-R1, QwQ, etc.) may put <think>…</think> before the JSON answer.
+function answerStart(text) {
+  if (!/^\s*<think>/i.test(text)) return 0;
+  const end = text.search(/<\/think>/i);
+  return end < 0 ? -1 : end + "</think>".length;
+}
+// Invalid drafts are skipped, not fatal. Streaming and final parsing apply the
+// same rule in the same order, so streamed indexes match the final result.
 function normalizeQuestion(item) {
   const normalize = (value) => value.trim().replace(/[“]([^”]+)[”]/g, "「$1」").replace(/([\p{Script=Han}])([A-Za-z0-9])/gu, "$1 $2").replace(/([A-Za-z0-9])([\p{Script=Han}])/gu, "$1 $2");
-  if (!item || typeof item.question !== "string" || !item.question.trim() || item.question.length > 500 || typeof item.description !== "string" || item.description.length > 3000 || !Array.isArray(item.keywords) || item.keywords.length !== 5 || item.keywords.some((x) => typeof x !== "string" || !x.trim() || x.length > 100)) throw new Error("模型草稿缺少标题、描述或 5 个有效话题建议。");
-  return { question: normalize(item.question), description: normalize(item.description), keywords: item.keywords.map(normalize) };
+  if (!item || typeof item.question !== "string" || !item.question.trim()) return null;
+  const keywords = Array.isArray(item.keywords)
+    ? [...new Set(item.keywords.filter((x) => typeof x === "string").map((x) => normalize(x.replace(/^\s*#+/, "")).slice(0, 100)).filter(Boolean))].slice(0, 5)
+    : [];
+  if (!keywords.length) return null;
+  return {
+    question: normalize(item.question).slice(0, 500),
+    description: typeof item.description === "string" ? normalize(item.description).slice(0, 3000) : "",
+    keywords,
+  };
 }
 export function createQuestionEmitter(onItem) {
   let cursor = 0, start = -1, depth = 0, inString = false, escaped = false, count = 0, ready = false, ended = false;
   return (text) => {
     if (ended) return;
     if (!ready) {
-      const prefix = /^\s*(?:```(?:json)?\s*)?\{\s*"items"\s*:\s*\[/i.exec(text);
+      const offset = answerStart(text);
+      if (offset < 0) return;
+      const prefix = ITEMS_PREFIX.exec(text.slice(offset));
       if (!prefix) return; // Other valid JSON shapes still use final validation.
-      cursor = prefix[0].length; ready = true;
+      cursor = offset + prefix.index + prefix[0].length; ready = true;
     }
     for (; cursor < text.length; cursor++) {
       const char = text[cursor];
@@ -155,19 +197,31 @@ export function createQuestionEmitter(onItem) {
       if (char === "{") { if (!depth) start = cursor; depth++; }
       if (char === "}" && depth) {
         depth--;
-        if (!depth && count < 6) onItem(normalizeQuestion(JSON.parse(text.slice(start, cursor + 1))), count++);
+        if (!depth && count < 6) {
+          let item = null;
+          try { item = normalizeQuestion(JSON.parse(text.slice(start, cursor + 1))); } catch { /* Final parsing reports format errors. */ }
+          if (item) onItem(item, count++);
+        }
       }
     }
   };
 }
+function extractJson(text) {
+  const offset = answerStart(text);
+  const body = (offset < 0 ? "" : text.slice(offset)).trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try { return JSON.parse(body); } catch { /* Fall back to the JSON object inside surrounding prose. */ }
+  const prefix = ITEMS_PREFIX.exec(body);
+  const first = prefix ? prefix.index : body.indexOf("{"), last = body.lastIndexOf("}");
+  if (first < 0 || last <= first) throw new SyntaxError("No JSON object");
+  return JSON.parse(body.slice(first, last + 1));
+}
 export function parseQuestionSet(text) {
   if (typeof text !== "string" || !text.trim()) throw new Error("模型没有返回可用文案。");
   let result;
-  try {
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    result = JSON.parse(cleaned);
-  } catch { throw new Error("模型返回的不是有效 JSON，请重试或更换模型。"); }
-  if (!Array.isArray(result.items) || result.items.length !== 6) throw new Error("模型必须返回 6 个提问草稿。");
-  const items = result.items.map(normalizeQuestion);
+  try { result = extractJson(text); } catch { throw new Error("模型返回的不是有效 JSON，请重试或更换模型。"); }
+  const list = Array.isArray(result) ? result : result?.items;
+  if (!Array.isArray(list)) throw new Error("模型返回格式不正确，缺少 items 列表。");
+  const items = list.map(normalizeQuestion).filter(Boolean).slice(0, 6);
+  if (!items.length) throw new Error("模型没有返回有效的提问草稿，请重试或更换模型。");
   return { items };
 }

@@ -59,8 +59,34 @@ test("authentication failures do not expose provider bodies or trigger retries",
 test("draft output is validated and extra model fields are discarded", () => {
   const normalized = parseQuestionSet(`\`\`\`json\n${JSON.stringify({ ...result, extra: "ignore" })}\n\`\`\``);
   assert.deepEqual(Object.keys(normalized), ["items"]);
-  assert.throws(() => parseQuestionSet('{"items":[]}'), /6 个/);
-  assert.throws(() => parseQuestionSet(JSON.stringify({ items: result.items.map((x) => ({ ...x, keywords: ["one"] })) })), /5 个/);
+  assert.throws(() => parseQuestionSet('{"items":[]}'), /有效的提问草稿/);
+  assert.throws(() => parseQuestionSet(JSON.stringify({ items: result.items.map((x) => ({ ...x, keywords: [] })) })), /有效的提问草稿/);
+});
+
+test("imperfect model output is repaired instead of failing the whole batch", () => {
+  const items = result.items.map((x) => ({ ...x }));
+  items[0] = { ...items[0], keywords: ["#人工智能", "人工智能", "法律"], description: undefined };
+  const noisy = `<think>先分析 {"items":[ 草稿</think>\n好的，以下是结果：\n\`\`\`json\n${JSON.stringify({ items: [items[0], { foo: 1 }, ...items.slice(1), items[1]] })}\n\`\`\``;
+  const parsed = parseQuestionSet(noisy);
+  assert.equal(parsed.items.length, 6);
+  assert.deepEqual(parsed.items[0].keywords, ["人工智能", "法律"]);
+  assert.equal(parsed.items[0].description, "");
+  const streamed = []; const emit = createQuestionEmitter((item, index) => streamed.push([index, item.question]));
+  for (let end = 1; end <= noisy.length; end += 11) emit(noisy.slice(0, end));
+  emit(noisy);
+  assert.deepEqual(streamed, parsed.items.map((item, index) => [index, item.question]));
+});
+
+test("full endpoint URLs are normalized and provider errors are shown without key-like tokens", async () => {
+  assert.equal(resolveConfig({ apiKey: "k", baseURL: "https://openrouter.ai/api/v1/chat/completions/" }).baseURL, "https://openrouter.ai/api/v1");
+  const reply = async () => new Response(JSON.stringify({ error: { message: "Incorrect API key provided: sk-abcdefghijklmnopqrstuvwxyz0123" } }), { status: 401 });
+  await assert.rejects(generateQuestions(page, { apiKey: "k" }, reply), (error) => /密钥无效/.test(error.message) && /Incorrect API key/.test(error.message) && !error.message.includes("abcdefghij"));
+});
+
+test("multi-paragraph selections are removed from the background paragraph by paragraph", () => {
+  const mainText = "第一段内容在这里，讲人工智能。\n第二段继续讨论 浏览器 插件。\n第三段是无关的背景信息。";
+  const source = compactSource({ ...page, mainText, selectedText: "第一段内容在这里，讲人工智能。 第二段继续讨论浏览器插件。" });
+  assert.equal(source.mainText, "第三段是无关的背景信息。");
 });
 
 test("distribution is an ES module extension without localhost host permissions", async () => {
@@ -118,7 +144,7 @@ test("streaming delivers a valid first draft before generation completes and rec
 test("invalid incomplete items are never exposed as draft cards", () => {
   const seen = []; const emit = createQuestionEmitter(item => seen.push(item));
   emit('{"items":[{"question":"不完整'); assert.equal(seen.length, 0);
-  assert.throws(() => emit('{"items":[{"question":"不完整"}]'), /5 个/);
+  emit('{"items":[{"question":"不完整"}]');
   assert.equal(seen.length, 0);
 });
 

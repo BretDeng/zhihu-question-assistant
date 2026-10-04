@@ -1,6 +1,18 @@
 import { resolveConfig } from "./modelClient.js";
 const PROFILES = "modelProfiles";
 const KEYS = "modelProfileKeys";
+// Every write is read-modify-write of the whole profile set. Serialize writes
+// in this page and, via Web Locks, across the popup, dashboard and worker.
+let writeQueue = Promise.resolve();
+function exclusive(task) {
+  const run = () => globalThis.navigator?.locks ? navigator.locks.request("zh-qa-model-profiles", task) : task();
+  const result = writeQueue.then(run, run);
+  writeQueue = result.catch(() => {});
+  return result;
+}
+export const saveProfile = (form, chromeApi = chrome) => exclusive(() => saveProfileNow(form, chromeApi));
+export const selectProfile = (id, chromeApi = chrome) => exclusive(() => selectProfileNow(id, chromeApi));
+export const removeProfile = (id, chromeApi = chrome) => exclusive(() => removeProfileNow(id, chromeApi));
 export async function restrictStorage(chromeApi = chrome) {
   await chromeApi.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" });
 }
@@ -20,7 +32,7 @@ export async function activeModelConfig(chromeApi = chrome) {
   if (!item) throw new Error("请先在模型面板添加并启用一套模型配置。");
   return { provider: item.provider, baseURL: item.baseURL, model: item.model, apiKey: state.localKeys[item.id] || state.sessionKeys[item.id] || "" };
 }
-export async function saveProfile(form, chromeApi = chrome) {
+async function saveProfileNow(form, chromeApi = chrome) {
   const state = await readProfiles(chromeApi);
   const existing = state.items.find((item) => item.id === form.id);
   const id = existing?.id || crypto.randomUUID();
@@ -37,13 +49,13 @@ export async function saveProfile(form, chromeApi = chrome) {
   await chromeApi.storage.local.remove("modelConfig"); await chromeApi.storage.session.remove("modelApiKey");
   return id;
 }
-export async function selectProfile(id, chromeApi = chrome) {
+async function selectProfileNow(id, chromeApi = chrome) {
   const state = await readProfiles(chromeApi);
   if (!state.items.some((item) => item.id === id)) throw new Error("模型配置已不存在，请刷新面板。");
   await chromeApi.storage.session.set({ [KEYS]: state.sessionKeys });
   await chromeApi.storage.local.set({ [PROFILES]: { activeId: id, items: state.items }, [KEYS]: state.localKeys });
 }
-export async function removeProfile(id, chromeApi = chrome) {
+async function removeProfileNow(id, chromeApi = chrome) {
   const state = await readProfiles(chromeApi);
   state.items = state.items.filter((item) => item.id !== id);
   delete state.localKeys[id]; delete state.sessionKeys[id];

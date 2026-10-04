@@ -3,8 +3,43 @@ import { activeModelConfig } from "./modelProfiles.js";
 import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription } from "./draftPreferences.js";
 chrome.storage.local?.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
+const ONBOARDING_KEY = "onboardingSeen";
+const BALL_POSITION_KEY = "ballPosition";
+// Stored as fractions of the free viewport space so it adapts to any window size.
+function validBallPosition(value) {
+  const ok = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
+  return value && ok(value.x) && ok(value.y) ? { x: value.x, y: value.y } : null;
+}
+const openGuide = () => chrome.tabs.create({ url: chrome.runtime.getURL("guide.html") });
+
+chrome.runtime.onInstalled?.addListener(({ reason }) => {
+  if (reason === "install") openGuide().catch(() => {});
+});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "OPEN_GUIDE") {
+    openGuide().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false, error: "无法打开教程。" }));
+    return true;
+  }
+  if (message?.type === "GET_UI_STATE") {
+    chrome.storage.local.get([ONBOARDING_KEY, BALL_POSITION_KEY]).then(stored => sendResponse({ ok: true, data: {
+      onboardingSeen: stored[ONBOARDING_KEY] === true,
+      ballPosition: validBallPosition(stored[BALL_POSITION_KEY]),
+    } })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.type === "SET_BALL_POSITION") {
+    const position = message.position === null ? null : validBallPosition(message.position);
+    if (message.position !== null && !position) return;
+    (position ? chrome.storage.local.set({ [BALL_POSITION_KEY]: position }) : chrome.storage.local.remove(BALL_POSITION_KEY))
+      .then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.type === "SET_ONBOARDING_SEEN") {
+    chrome.storage.local.set({ [ONBOARDING_KEY]: true }).then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
   if (message?.type === "GET_DESCRIPTION_MODE") {
     readDescriptionMode(chrome).then(mode => sendResponse({ ok: true, data: { mode } }))
       .catch(() => sendResponse({ ok: false }));
@@ -23,7 +58,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "GET_ACTIVE_MODEL") {
-    activeModelConfig().then(({ model, provider }) => sendResponse({ ok: true, data: { model, provider } }))
+    activeModelConfig().then(({ model, provider, apiKey }) => sendResponse({ ok: true, data: { model, provider, hasKey: Boolean(apiKey) } }))
       .catch(() => sendResponse({ ok: false }));
     return true;
   }
@@ -65,10 +100,15 @@ async function siteEnabled(url) {
   return !isSiteExcluded(url, stored[SITE_RULES_KEY]);
 }
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || (!changes[SITE_RULES_KEY] && !changes[DESCRIPTION_MODE_KEY])) return;
-  const type = changes[SITE_RULES_KEY] ? "SITE_RULES_CHANGED" : "DESCRIPTION_MODE_CHANGED";
-  chrome.tabs.query({}).then(tabs => Promise.allSettled(tabs.map(tab =>
-    chrome.tabs.sendMessage(tab.id, { type })
+  if (area !== "local") return;
+  const types = [
+    changes[SITE_RULES_KEY] && "SITE_RULES_CHANGED",
+    changes[DESCRIPTION_MODE_KEY] && "DESCRIPTION_MODE_CHANGED",
+    (changes.modelProfiles || changes.modelProfileKeys) && "MODEL_CHANGED",
+  ].filter(Boolean);
+  if (!types.length) return;
+  chrome.tabs.query({}).then(tabs => Promise.allSettled(tabs.flatMap(tab =>
+    types.map(type => chrome.tabs.sendMessage(tab.id, { type }))
   ))).catch(() => {});
 });
 

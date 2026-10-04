@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 import { normalizeSite, parseSites, isSiteExcluded, SITE_RULES_KEY } from "../extension/siteRules.js";
+import { DESCRIPTION_MODE_KEY } from "../extension/draftPreferences.js";
 
 test("site rules normalize pasted URLs, case, trailing dots, Unicode and duplicates", () => {
   assert.deepEqual(parseSites("Example.COM\nhttps://example.com/article?q=1\n\nnews.example.org."), ["example.com", "news.example.org"]);
@@ -49,7 +50,7 @@ test("background policy uses sender URL, broadcasts changes, and blocks model ca
     storage: { local: { get: async () => ({ excludedSites: ["example.com"], modelProfileKeys: { secret: "not-for-pages" } }) }, onChanged: { addListener(fn) { onChanged = fn; } } },
     tabs: { onRemoved: { addListener() {} }, query: async () => [{ id: 1 }, { id: 2 }], sendMessage: async (id, message) => messages.push({ id, message }) },
   };
-  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { chrome, SITE_RULES_KEY, isSiteExcluded, activeModelConfig: async () => { generated = true; } });
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { chrome, SITE_RULES_KEY, DESCRIPTION_MODE_KEY, isSiteExcluded, activeModelConfig: async () => { generated = true; } });
   const sender = { tab: { id: 1 }, url: "https://news.example.com" };
   const send = message => new Promise(resolve => listener(message, sender, resolve));
   assert.deepEqual(JSON.parse(JSON.stringify(await send({ type: "GET_SITE_ACCESS", url: "https://allowed.org" }))), { ok: true, data: { enabled: false } });

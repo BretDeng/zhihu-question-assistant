@@ -37,6 +37,16 @@ test("editing can retain or move a key but cannot silently reuse it on another d
   await assert.rejects(saveProfile({ ...form, id, apiKey: "", baseURL: "https://other.example/v1" }, api), /新密钥/);
   assert.equal((await activeModelConfig(api)).baseURL, form.baseURL);
 });
+test("concurrent saves, switches and deletions never overwrite each other", async () => {
+  const api = mockChrome();
+  const [a, b] = await Promise.all([saveProfile(form, api), saveProfile({ ...form, model: "model-2", apiKey: "key-2" }, api)]);
+  assert.equal((await readProfiles(api)).items.length, 2);
+  const [c] = await Promise.all([saveProfile({ ...form, model: "model-3", apiKey: "key-3" }, api), removeProfile(a, api), selectProfile(b, api)]);
+  const state = await readProfiles(api);
+  assert.deepEqual(state.items.map((item) => item.id).sort(), [b, c].sort());
+  assert.equal(state.activeId, b);
+  assert.equal(state.localKeys[c], "key-3");
+});
 test("legacy settings retain session-only policy and discard unexpected credential fields", async () => {
   const api = mockChrome({ modelConfig: { ...form, apiKey: "should-not-leak" } }, { modelApiKey: "legacy-key" });
   const state = await readProfiles(api);

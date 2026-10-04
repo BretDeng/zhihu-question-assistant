@@ -1,5 +1,5 @@
 globalThis.ZhihuDraggable ||= (() => {
-  function attach(element, handle = element) {
+  function attach(element, handle = element, { onDragEnd } = {}) {
     let drag = null;
     let moved = false;
     let suppressClick = false;
@@ -42,9 +42,11 @@ globalThis.ZhihuDraggable ||= (() => {
     }
     function end(event) {
       if (!drag || drag.id !== event.pointerId) return;
+      const dragged = drag.active;
       drag = null;
       handle.style.cursor = "grab";
       if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      if (dragged) onDragEnd?.(element.getBoundingClientRect());
     }
     function click(event) {
       if (!suppressClick || event.detail === 0) return;

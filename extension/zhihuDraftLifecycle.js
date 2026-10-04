@@ -24,11 +24,13 @@
       const value = title.value.trim().slice(0, 500);
       if (value) { draft.publishedTitle = value; onPublishTitle(value); }
     };
-    const observer = new MutationObserver(check);
+    // Zhihu mutates the DOM constantly; coalesce bursts into one check.
+    let scheduled = 0;
+    const observer = new MutationObserver(() => { scheduled ||= setTimeout(() => { scheduled = 0; check(); }, 200); });
     const interval = setInterval(check, 1000); // Also covers SPA URL changes without DOM events.
     function stop() {
       if (stopped) return;
-      stopped = true; observer.disconnect(); clearInterval(interval);
+      stopped = true; observer.disconnect(); clearInterval(interval); clearTimeout(scheduled);
       document.removeEventListener("click", rememberTitle, true);
       document.removeEventListener("submit", rememberTitle, true);
       window.removeEventListener("popstate", check);

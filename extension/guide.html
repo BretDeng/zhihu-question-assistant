@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN" class="is-dashboard">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>知乎提问助手 · 新手教程</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="guide.css"></head>
+<body>
+<main class="app-shell guide">
+  <header class="app-header"><div><p class="eyebrow">QUESTION LAB · 新手教程</p><h1>五分钟上手知乎提问助手</h1></div><button id="openSettingsButton" class="qa-primary" type="button">打开模型设置</button></header>
+  <p class="guide-lead">在任意网页点右下角的「问」，助手会读取当前网页，生成 6 个不同角度的知乎问题草稿；你编辑满意后一键带到知乎，自动填写标题、描述和话题。<b>插件不会替你发布</b>，最后一步始终由你确认。</p>
+
+  <section class="checklist" aria-labelledby="checklistHeading">
+    <div class="section-heading"><h2 id="checklistHeading">准备情况</h2><span class="site-badge">实时更新</span></div>
+    <ul>
+      <li id="checkModel" data-state="pending"><span class="dot" aria-hidden="true"></span><div><b>添加模型配置</b><small>正在检查…</small></div></li>
+      <li id="checkKey" data-state="pending"><span class="dot" aria-hidden="true"></span><div><b>密钥已就绪</b><small>正在检查…</small></div></li>
+      <li id="checkMode" data-state="done"><span class="dot" aria-hidden="true"></span><div><b>问题描述形式</b><small>正在检查…</small></div></li>
+    </ul>
+  </section>
+
+  <ol class="steps">
+    <li class="step-card">
+      <h2>添加模型</h2>
+      <p>点击浏览器工具栏里的扩展图标（或上方「打开模型设置」），选择「添加配置」。两种提供方任选其一：</p>
+      <div class="option-grid">
+        <div class="option"><h3>知乎直答</h3><p>提供方选「知乎直答」，模型可选 <code>zhida-agent</code>（默认）、<code>zhida-fast-1p5</code>（更快）或 <code>zhida-thinking-1p5</code>（更深入）。密钥使用知乎数据开放平台的 Access Secret，获取步骤见下方。注册后有免费调用额度（官网标注每天 5000 次）。</p></div>
+        <div class="option"><h3>OpenAI 兼容 API</h3><p>填写服务商的 API 地址（通常以 <code>/v1</code> 结尾，如 <code>https://api.openai.com/v1</code>）、模型名称和 API Key。只要接口兼容 <code>/chat/completions</code> 即可使用。首次保存时浏览器会请求访问该域名，请点「允许」。</p></div>
+      </div>
+      <div class="key-steps">
+        <h3>获取知乎直答 Access Secret</h3>
+        <ol>
+          <li>打开 <a href="https://developer.zhihu.com/" target="_blank" rel="noopener">知乎数据开放平台</a>，点右上角「注册」或「登录」，用知乎账号登录（手机验证码或知乎 App 扫码均可）。</li>
+          <li>登录后进入 <a href="https://developer.zhihu.com/profile" target="_blank" rel="noopener">个人中心</a>，创建密钥并复制 Access Secret。</li>
+          <li>回到本扩展的设置面板，点「添加配置」，配置名称随意（如「知乎直答」），提供方选「知乎直答」。</li>
+          <li>选择模型档位，把 Access Secret 粘贴到「API Key / Access Secret」，勾选「记住密钥」，点「保存并使用」。</li>
+        </ol>
+        <p class="note">Access Secret 相当于账号凭证，不要分享给他人；如果泄露，请在个人中心重新创建。</p>
+      </div>
+      <p class="note">勾选「在这台设备上记住密钥」后，密钥保存在本机扩展存储（不同步云端）；不勾选则浏览器关闭后需要重新填写。可保存多套配置，随时一键切换。</p>
+    </li>
+    <li class="step-card">
+      <h2>选择问题描述形式</h2>
+      <p>在设置面板的「问题描述形式」中选择：</p>
+      <ul>
+        <li><b>概括提问</b>：模型根据网页内容写一段精简的背景和讨论点，适合大多数情况。</li>
+        <li><b>网页原文</b>：问题描述直接使用网页已加载的正文，模型只生成标题和话题，原文不会被改写。</li>
+      </ul>
+    </li>
+    <li class="step-card">
+      <h2>在网页上生成草稿</h2>
+      <ul>
+        <li>打开一篇文章或新闻，点击右下角的「问」打开面板。</li>
+        <li>想聚焦某一段？<b>先选中这段文字</b>，助手会优先围绕选中内容提问。</li>
+        <li>点「分析当前网页」，6 个草稿会边生成边出现，先出来的可以先编辑。</li>
+        <li>标题、描述和话题建议都可以直接修改，话题之间用顿号或逗号分隔。</li>
+      </ul>
+    </li>
+    <li class="step-card">
+      <h2>去知乎提问</h2>
+      <ul>
+        <li>在满意的草稿上点「去知乎提问」，助手会在新标签页打开知乎（需要已登录）。</li>
+        <li>知乎页面右下角会出现「提问草稿」面板，并自动打开提问框，填写标题、描述和引用来源链接。</li>
+        <li>随后通过知乎的 # 话题按钮搜索话题，<b>只绑定名称完全一致的已有话题</b>，其余会列出供你手动确认。</li>
+        <li>检查无误后，<b>由你自己点击发布</b>。已有内容不会被覆盖，自动填写失败时可用「复制」按钮手动粘贴。</li>
+      </ul>
+    </li>
+    <li class="step-card">
+      <h2>小技巧</h2>
+      <ul>
+        <li>「问」按钮和面板标题栏都可以拖动，挡住内容时挪开即可，「问」的位置会被记住；按 Esc 可收起面板。</li>
+        <li>不想在某些网站看到「问」？在设置面板的「网站过滤」中加入域名，已打开的页面会立即生效。</li>
+        <li>面板底部会显示首个草稿和总耗时，便于比较不同模型的速度。</li>
+      </ul>
+    </li>
+  </ol>
+
+  <section class="faq" aria-labelledby="faqHeading">
+    <h2 id="faqHeading">常见问题与报错</h2>
+    <input id="faqSearch" class="search-input" type="search" placeholder="粘贴报错文字或输入关键字，如「401」「超时」「话题」…" aria-label="搜索常见问题">
+    <div id="faqList" class="faq-list"></div>
+  </section>
+
+  <footer><button id="doneButton" class="qa-secondary" type="button">我已了解，开始使用</button></footer>
+</main>
+<script src="uiTheme.js"></script><script type="module" src="guide.js"></script>
+</body></html>

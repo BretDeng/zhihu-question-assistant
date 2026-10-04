@@ -24,7 +24,9 @@ test("SPA completion stops observers, timers, and capture listeners exactly once
     document: { body: {}, querySelector: () => ({ textContent: title }), addEventListener() {}, removeEventListener() { removed++; } },
     window: { addEventListener() {}, removeEventListener() {} },
     MutationObserver: class { constructor(callback) { check = callback; } observe() {} disconnect() { disconnected++; } },
-    setInterval(fn) { ticks = fn; return 1; }, clearInterval() { cleared++; }
+    setInterval(fn) { ticks = fn; return 1; }, clearInterval() { cleared++; },
+    // Mutation checks are debounced; run them immediately here.
+    setTimeout(fn) { fn(); return 0; }, clearTimeout() {}
   });
   const stop = api.watch({ question: "草稿标题？" }, () => completed++, () => {});
   title = "草稿标题？"; check(); assert.equal(completed, 0);

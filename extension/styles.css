@@ -6,6 +6,10 @@ body{width:440px;min-width:440px;min-height:440px;margin:0;background:var(--qa-b
 .eyebrow{margin:0 0 2px;color:var(--qa-muted);font-size:9px;letter-spacing:.12em;font-weight:600}
 h1{font-size:20px;letter-spacing:-.035em;margin:0;line-height:1.4}h2{font-size:14px;margin:0}h3{font-size:13px;margin:0}
 .header-tag{color:var(--qa-muted);font-size:11px;border:1px solid var(--qa-line);border-radius:8px;padding:6px 10px;background:white;white-space:nowrap;flex-shrink:0}
+.header-buttons{display:flex;gap:6px;flex-shrink:0}
+.welcome-card{padding:16px 18px;margin-bottom:16px;background:white;border:1px solid #bcb3ff;border-radius:16px;box-shadow:0 0 0 3px #6250ff0d}
+.welcome-card h2{color:#4031bd}.welcome-card p{font-size:12px;color:var(--qa-muted);line-height:1.7;margin:6px 0 12px}
+.welcome-actions{display:flex;gap:8px}.welcome-actions button{font-size:12px}
 .app-header h1,.section-heading button{white-space:nowrap}.section-heading h2{display:flex;align-items:center;white-space:nowrap}
 .active-card{padding:18px 20px;background:var(--qa-soft);border:1px solid #dcd8ff;border-radius:16px;margin-bottom:22px}
 .active-card h2{font-size:19px;font-weight:600;color:#4031bd}.active-card p{font-size:12px;color:#726c96;margin:4px 0 0;overflow-wrap:anywhere}
@@ -31,6 +35,16 @@ footer{color:#898992;font-size:10px;text-align:center;padding:16px 0 0}
 .format-switch button{border:1px solid transparent;background:transparent;color:var(--qa-muted);border-radius:8px;padding:9px;font-size:12px;font-weight:600}
 .format-switch button[aria-pressed=true]{background:white;border-color:#dcd8ff;color:#4031bd;box-shadow:0 1px 4px #2121340d}
 .format-switch button:hover{color:var(--qa-accent)}
+.reset-ball{display:block;margin:10px 0 0 auto;font-size:11px}
+.faq-card{margin-top:22px;padding:18px;background:white;border:1px solid var(--qa-line);border-radius:16px}
+.faq-intro{margin-bottom:12px}.faq-open{width:100%;font-size:12px}.faq-body{display:none}
+.is-dashboard .faq-open{display:none}.is-dashboard .faq-body{display:block}
+.faq-list{display:grid;gap:18px}.faq-group h3{font-size:12px;color:#4031bd;margin:0 0 8px;letter-spacing:.02em}
+.faq-group details{border:1px solid var(--qa-line);border-radius:12px;padding:0 14px;margin-bottom:6px;background:#fcfcfe}
+.faq-group details[open]{background:white;border-color:#dcd8ff}
+.faq-group summary{cursor:pointer;padding:11px 0;font-size:12px;font-weight:600;line-height:1.6}
+.faq-group details p,.faq-group details ol{margin:0 0 10px;font-size:12px;line-height:1.8;color:#55555f;overflow-wrap:anywhere}.faq-group details ol{padding-left:20px}.faq-group li{margin:3px 0}
+.faq-empty{font-size:12px;color:var(--qa-muted);text-align:center;margin:8px 0}
 html.is-dashboard{width:auto;min-width:0}
 .is-dashboard body{width:auto;min-width:0}
 .is-dashboard .app-shell{max-width:1000px;margin:0 auto;padding:40px 32px}

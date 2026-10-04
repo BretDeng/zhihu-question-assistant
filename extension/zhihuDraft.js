@@ -18,6 +18,7 @@
     const pageTitle = (document.querySelector?.(".QuestionHeader-title") || document.querySelector?.("h1[itemprop='name'], h1"))?.textContent;
     if (globalThis.ZhihuDraftLifecycle?.isPublishedDraft(draft, location.pathname, pageTitle)) { clearSavedDraft(); return; }
     const host = document.createElement("div");
+    host.id = "zhihu-question-draft-root";
     document.documentElement.append(host);
     const root = host.attachShadow({ mode: "closed" });
     root.innerHTML = `<style>

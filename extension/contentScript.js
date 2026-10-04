@@ -14,7 +14,10 @@
   });
   function mount() {
 
-  let lastSelectedText = "";
+  // The remembered selection belongs to one page URL, and is dropped when the
+  // user deselects inside the page. Clicking the assistant must keep it.
+  let lastSelection = { text: "", url: "" };
+  let pointerInPage = false;
   let isAnalyzing = false;
   let currentRequest = null;
 
@@ -23,7 +26,8 @@
   host.id = "zhihu-question-assistant-root";
   document.documentElement.append(host);
 
-  const shadow = host.attachShadow({ mode: "open" });
+  // Closed: page scripts must not read drafts, model names or error details.
+  const shadow = host.attachShadow({ mode: "closed" });
   shadow.innerHTML = `
     <style>${getStyles()}</style>
     <button class="floating-ball" type="button" aria-label="打开知乎提问助手" title="知乎提问助手">
@@ -35,9 +39,25 @@
           <p class="eyebrow">QUESTION LAB</p>
           <h1>知乎提问助手</h1>
         </div>
-        <button class="close-button qa-quiet" type="button" aria-label="收起面板">收起</button>
+        <div class="header-actions">
+          <button class="guide-button qa-quiet" type="button" aria-label="打开新手教程" title="新手教程">教程</button>
+          <button class="close-button qa-quiet" type="button" aria-label="收起面板">收起</button>
+        </div>
       </header>
       <div class="panel-body">
+        <section class="onboarding is-hidden" aria-label="三步上手">
+          <p class="onboarding-title">三步上手</p>
+          <ol>
+            <li><b>配置模型</b>：点「选择模型」，添加知乎直答或任意 OpenAI 兼容 API。</li>
+            <li><b>分析网页</b>：可先选中一段文字，再点「分析当前网页」，生成 6 个提问草稿。</li>
+            <li><b>去知乎提问</b>：编辑标题、描述和话题后点「去知乎提问」，助手会自动填写，由你审核发布。</li>
+          </ol>
+          <p class="onboarding-tip">「问」按钮和面板标题栏都可拖动；不想在某个网站显示，可在设置里加入网站过滤。</p>
+          <div class="onboarding-actions">
+            <button class="onboarding-guide qa-quiet" type="button">查看完整教程</button>
+            <button class="onboarding-done qa-secondary" type="button">知道了</button>
+          </div>
+        </section>
         <div class="panel-toolbar">
         <button class="model-switch qa-secondary" type="button">选择模型</button>
         <button class="analyze-button" type="button">分析当前网页</button>
@@ -67,38 +87,80 @@
   const timingElement = shadow.querySelector(".timing-status");
   const formatStatus = shadow.querySelector(".format-status");
   const loadingText = loadingElement.querySelector("span:last-child");
+  // A run captures its mode at start, so displayed drafts and the next run may differ.
+  const formatState = { next: "summary", shown: null, partial: false };
+  function renderFormat() {
+    const label = (mode) => mode === "original" ? "网页原文" : "概括提问";
+    const partial = formatState.partial ? " · 仅包含已加载部分" : "";
+    formatStatus.textContent = !formatState.shown || formatState.shown === formatState.next
+      ? `描述形式 · ${label(formatState.next)}${formatState.shown ? partial : ""}`
+      : `当前草稿 · ${label(formatState.shown)}${partial} ｜ 下次分析 · ${label(formatState.next)}`;
+  }
+  function friendlyError(error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/Extension context invalidated|Receiving end does not exist|message port closed/i.test(message)) return "扩展已更新或重新加载，请刷新此网页后重试。";
+    return message || "发生未知错误，请重试。";
+  }
   function acceptItem(item, index) {
     const request = currentRequest;
     if (!request || request.received.has(index)) return;
     if (!request.startedResults) { resultsElement.replaceChildren(); request.startedResults = true; }
     renderResults([item], request.url, { append: true, startIndex: index });
-    if (item.descriptionMode) formatStatus.textContent = `描述形式 · ${item.descriptionMode === "original" ? "网页原文" : "概括提问"}${item.originalPartial ? " · 仅包含已加载部分" : ""}`;
+    if (item.descriptionMode) { formatState.shown = item.descriptionMode; formatState.partial = item.originalPartial === true; renderFormat(); }
     request.received.add(index);
     request.firstDraftMs ??= Math.round(performance.now() - request.started);
     loadingText.textContent = `已生成 ${request.received.size}/6 个草稿，可先编辑，剩余继续生成…`;
   }
   chrome.runtime.onMessage?.addListener((message) => {
     if (message?.type === "DESCRIPTION_MODE_CHANGED") { refreshDescriptionMode(); return; }
+    if (message?.type === "MODEL_CHANGED") { refreshActiveModel(); return; }
     if (message?.type !== "ZH_QUESTION_PROGRESS" || message.requestId !== currentRequest?.id) return;
     if (message.item && Number.isInteger(message.index) && message.index >= 0 && message.index < 6) acceptItem(message.item, message.index);
     else if (message.phase === "connected" && !currentRequest.received.size) loadingText.textContent = "模型已连接，正在生成第一个草稿…";
   });
-  modelSwitch.onclick = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS" });
+  modelSwitch.onclick = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS" }).catch(() => {});
+  const openGuide = () => chrome.runtime.sendMessage({ type: "OPEN_GUIDE" }).catch(() => {});
+  const onboarding = shadow.querySelector(".onboarding");
+  shadow.querySelector(".guide-button").addEventListener("click", openGuide);
+  shadow.querySelector(".onboarding-guide").addEventListener("click", openGuide);
+  shadow.querySelector(".onboarding-done").addEventListener("click", () => {
+    onboarding.classList.add("is-hidden");
+    chrome.runtime.sendMessage({ type: "SET_ONBOARDING_SEEN" }).catch(() => {});
+  });
+  chrome.runtime.sendMessage({ type: "GET_UI_STATE" }).then(reply => {
+    if (!reply?.ok) return;
+    if (!reply.data.onboardingSeen) onboarding.classList.remove("is-hidden");
+    const saved = reply.data.ballPosition;
+    if (saved && !ballDrag.moved) {
+      const rect = ball.getBoundingClientRect();
+      ballDrag.moveTo(saved.x * (innerWidth - rect.width), saved.y * (innerHeight - rect.height));
+    }
+  }).catch(() => {});
   function refreshActiveModel() {
     refreshDescriptionMode();
     chrome.runtime.sendMessage({ type: "GET_ACTIVE_MODEL" }).then((reply) => {
-      modelSwitch.textContent = reply?.data?.model ? `模型 · ${reply.data.model}` : "选择模型";
-      modelSwitch.title = reply?.data?.model ? `当前模型：${reply.data.model}，点击切换` : "打开模型设置";
+      const model = reply?.ok ? reply.data?.model : "";
+      const ready = Boolean(model && reply.data.hasKey);
+      modelSwitch.classList.toggle("needs-setup", !ready);
+      modelSwitch.textContent = !model ? "未配置模型 · 点此添加" : ready ? `模型 · ${model}` : `模型 · ${model} · 需补充密钥`;
+      modelSwitch.title = !model ? "打开模型设置，添加知乎直答或 OpenAI 兼容 API" : ready ? `当前模型：${model}，点击切换` : "密钥仅保存到浏览器会话结束，请在模型面板重新填写";
     }).catch(() => {});
   }
   function refreshDescriptionMode() {
     chrome.runtime.sendMessage({ type: "GET_DESCRIPTION_MODE" }).then(reply => {
-      if (reply?.ok) formatStatus.textContent = `描述形式 · ${reply.data.mode === "original" ? "网页原文" : "概括提问"}`;
+      if (reply?.ok) { formatState.next = reply.data.mode; renderFormat(); }
     }).catch(() => {});
   }
   refreshActiveModel();
 
-  const ballDrag = ZhihuDraggable.attach(ball);
+  const ballDrag = ZhihuDraggable.attach(ball, ball, { onDragEnd: (rect) => {
+    const free = (size, length) => Math.max(1, size - length);
+    const clamp = (value) => Math.min(1, Math.max(0, value));
+    chrome.runtime.sendMessage({ type: "SET_BALL_POSITION", position: {
+      x: clamp(rect.left / free(innerWidth, rect.width)),
+      y: clamp(rect.top / free(innerHeight, rect.height)),
+    } }).catch(() => {});
+  } });
   const panelDrag = ZhihuDraggable.attach(panel, shadow.querySelector(".panel-header"));
   closePanel = () => panel.classList.remove("is-open");
   ball.addEventListener("click", () => {
@@ -110,8 +172,12 @@
     refreshActiveModel();
   });
   closeButton.addEventListener("click", () => panel.classList.remove("is-open"));
+  panel.addEventListener("keydown", event => {
+    if (event.key === "Escape") { panel.classList.remove("is-open"); ball.focus(); }
+  });
   analyzeButton.addEventListener("click", analyzeCurrentPage);
 
+  document.addEventListener("pointerdown", (event) => { pointerInPage = event.target !== host; }, { capture: true, passive: true });
   document.addEventListener("selectionchange", rememberSelectedText, { passive: true });
 
   async function analyzeCurrentPage() {
@@ -144,12 +210,13 @@
       }
 
       response.data.items.forEach((item, index) => acceptItem(item, index));
+      if (!onboarding.classList.contains("is-hidden")) shadow.querySelector(".onboarding-done").click();
       const total = Math.round(performance.now() - started);
       const stats = response.data.timings || {};
       timingElement.textContent = `首个草稿 ${(currentRequest.firstDraftMs / 1000).toFixed(1)} 秒 · 总耗时 ${(total / 1000).toFixed(1)} 秒`;
       timingElement.title = `网页提取 ${currentRequest.extractMs} ms；模型连接 ${stats.headersMs ?? "未知"} ms；首段正文 ${stats.firstContentMs ?? "未知"} ms；模型生成完成 ${stats.totalMs ?? "未知"} ms。计时不保存网页内容或密钥。`;
     } catch (error) {
-      showError(`${error instanceof Error ? error.message : "发生未知错误，请重试。"}${currentRequest?.received.size ? " 已生成的有效草稿已保留。" : ""}`);
+      showError(`${friendlyError(error)}${currentRequest?.received.size ? " 已生成的有效草稿已保留。" : ""}`);
     } finally {
       setLoading(false);
       currentRequest = null;
@@ -159,9 +226,8 @@
   function extractPageContent() {
     const article = ZhihuPageText.extractDetailed();
     const currentSelection = cleanText(globalThis.getSelection()?.toString() || "");
-    if (currentSelection) {
-      lastSelectedText = currentSelection;
-    }
+    if (currentSelection) lastSelection = { text: currentSelection.slice(0, 12000), url: location.href };
+    const remembered = lastSelection.url === location.href ? lastSelection.text : "";
 
     return {
       title: cleanText(document.title).slice(0, 500),
@@ -171,7 +237,7 @@
           document.querySelector('meta[property="og:description"]')?.content ||
           "",
       ).slice(0, 1500),
-      selectedText: (currentSelection || lastSelectedText).slice(0, 12000),
+      selectedText: (currentSelection || remembered).slice(0, 12000),
       // Preserve the complete extracted text for local original-mode drafts.
       // The model client applies its separate 6,000-character input budget.
       mainText: article.text,
@@ -182,9 +248,8 @@
 
   function rememberSelectedText() {
     const selectedText = cleanText(globalThis.getSelection()?.toString() || "");
-    if (selectedText) {
-      lastSelectedText = selectedText.slice(0, 12000);
-    }
+    if (selectedText) lastSelection = { text: selectedText.slice(0, 12000), url: location.href };
+    else if (pointerInPage) lastSelection = { text: "", url: "" };
   }
 
   function renderResults(items, sourceUrl, { append = false, startIndex = 0 } = {}) {
@@ -241,7 +306,7 @@
             keywords: topicInput.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
           }});
           if (!reply?.ok) throw new Error(reply?.error || "打开草稿失败");
-        } catch (error) { showError(error.message); }
+        } catch (error) { showError(friendlyError(error)); }
         finally { openButton.disabled = false; }
       });
       card.append(heading, titleInput, descriptionInput, topicLabel, openButton);
@@ -291,6 +356,11 @@
       .panel-body{min-height:0;overflow:auto;padding:12px}
       .panel-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
       .model-switch{min-width:0;margin:0;text-align:left;font-size:11px;color:var(--qa-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px 10px}
+      .model-switch.needs-setup{color:#5140a9;border-color:#bcb3ff;background:var(--qa-soft)}
+      .header-actions{display:flex;gap:2px}
+      .onboarding{margin:0 0 12px;padding:12px 14px;background:white;border:1px solid #dcd8ff;border-radius:12px;font-size:12px;line-height:1.65}
+      .onboarding-title{margin:0 0 6px;font-weight:600;color:#4031bd}.onboarding ol{margin:0;padding-left:18px}.onboarding li{margin:4px 0}.onboarding b{font-weight:600}
+      .onboarding-tip{margin:8px 0 0;color:var(--qa-muted);font-size:11px}.onboarding-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}.onboarding-actions button{font-size:11px;padding:6px 10px}
       .analyze-button{border:1px solid var(--qa-accent);border-radius:10px;padding:9px 12px;color:#fff;background:var(--qa-accent);font-size:12px;font-weight:600;white-space:nowrap}
       .analyze-button:hover{background:#5140eb}.loading,.error,.empty-state{margin-top:12px;padding:12px 14px;border-radius:12px;font-size:12px;line-height:1.6}
       .loading{background:var(--qa-soft);color:#5140a9}.spinner{display:none}.error{color:var(--qa-danger);background:#fff1f2;border:1px solid #f1d4db}.empty-state{background:white;color:var(--qa-muted);border:1px dashed var(--qa-line)}

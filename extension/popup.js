@@ -2,6 +2,7 @@ import { DEFAULT_BASE_URL, resolveConfig } from "./modelClient.js";
 import { readProfiles, saveProfile, selectProfile, removeProfile } from "./modelProfiles.js";
 import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
+import { renderFaq } from "./faq.js";
 const theme = document.createElement("style");
 theme.textContent = globalThis.ZhihuUiTheme;
 document.head.append(theme);
@@ -13,10 +14,30 @@ $("#expandDashboardButton").onclick = async () => {
   try { await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard") }); }
   catch { showStatus("无法打开独立面板，请重试。", true); }
 };
+const openGuide = async () => {
+  try { await chrome.tabs.create({ url: chrome.runtime.getURL("guide.html") }); }
+  catch { showStatus("无法打开教程，请重试。", true); }
+};
+$("#guideButton").onclick = openGuide;
+if (fullDashboard) {
+  renderFaq($("#faqList"), $("#faqSearch"));
+  if (location.hash === "#faq") $("#faq").scrollIntoView();
+}
+$("#openFaqButton").onclick = async () => {
+  try { await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard#faq") }); }
+  catch { showStatus("无法打开常见问题，请重试。", true); }
+};
+$("#resetBallButton").onclick = async () => {
+  try { await chrome.storage.local.remove("ballPosition"); siteStatus("已恢复默认位置，刷新或新打开的网页生效。"); }
+  catch { siteStatus("恢复失败，请重试。", true); }
+};
+$("#welcomeGuideButton").onclick = openGuide;
+$("#welcomeAddButton").onclick = () => openEditor();
 let state;
 let editingId = null;
 let busy = false;
 $("#addProfileButton").onclick = () => openEditor();
+if (new URL(location.href).searchParams.get("add") === "1") load().then(() => openEditor());
 $("#cancelEditButton").onclick = () => $("#profileEditor").classList.add("is-hidden");
 $("#profileSearch").oninput = renderProfiles;
 $("#providerInput").onchange = () => { $("#modelInput").value = ""; updateProviderFields(); };
@@ -30,6 +51,8 @@ loadDescriptionMode();
 modeButtons.forEach((button, index) => { button.onclick = () => saveDescriptionMode(index ? "original" : "summary"); });
 chrome.storage.onChanged?.addListener((changes, area) => {
   if (area === "local" && changes[DESCRIPTION_MODE_KEY]) renderDescriptionMode(normalizeDescriptionMode(changes[DESCRIPTION_MODE_KEY].newValue));
+  // Keep the popup and the dashboard in sync when the other one saves.
+  if (changes.modelProfiles || changes.modelProfileKeys) load();
 });
 function renderDescriptionMode(mode) {
   descriptionMode = mode;
@@ -83,6 +106,9 @@ async function load() {
   try { state = await readProfiles(); renderProfiles(); }
   catch { showStatus("读取配置失败，请重新打开扩展。", true); }
 }
+function hostnameOf(value) {
+  try { return new URL(value).hostname; } catch { return "地址无效，请编辑"; }
+}
 function keyFor(id) { return state.localKeys[id] || state.sessionKeys[id] || ""; }
 function renderProfiles() {
   if (!state) return;
@@ -90,6 +116,7 @@ function renderProfiles() {
   $("#activeName").textContent = active?.name || "尚未配置模型";
   $("#activeDetail").textContent = active ? `${active.model} · ${keyFor(active.id) ? "密钥已就绪" : "需补充密钥"}` : "添加你的 API，开始把网页变成好问题。";
   $("#profileCount").textContent = state.items.length;
+  $("#welcomeCard").classList.toggle("is-hidden", state.items.length > 0);
   const list = $("#profileList");
   list.replaceChildren();
   const search = $("#profileSearch").value.trim().toLowerCase();
@@ -104,7 +131,7 @@ function renderProfiles() {
     const info = document.createElement("div"); info.className = "profile-info";
     const name = document.createElement("h3"); name.textContent = item.name;
     const model = document.createElement("p"); model.textContent = item.model;
-    const api = document.createElement("small"); api.textContent = `${new URL(item.baseURL || DEFAULT_BASE_URL).hostname} · ${keyFor(item.id) ? (item.rememberKey ? "本机保存" : "会话密钥") : "缺少密钥"}`;
+    const api = document.createElement("small"); api.textContent = `${hostnameOf(item.baseURL || DEFAULT_BASE_URL)} · ${keyFor(item.id) ? (item.rememberKey ? "本机保存" : "会话密钥") : "缺少密钥"}`;
     info.append(name, model, api);
     const actions = document.createElement("div"); actions.className = "profile-actions";
     const use = document.createElement("button"); use.className = item.id === state.activeId ? "active-pill" : "qa-secondary";

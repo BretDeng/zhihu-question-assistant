@@ -3,7 +3,12 @@
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>知乎提问助手 · 模型</title><link rel="stylesheet" href="styles.css"></head>
 <body>
 <main class="app-shell">
-  <header class="app-header"><div><p class="eyebrow">QUESTION LAB</p><h1>知乎提问助手</h1></div><button id="expandDashboardButton" class="header-tag" type="button">展开面板</button></header>
+  <header class="app-header"><div><p class="eyebrow">QUESTION LAB</p><h1>知乎提问助手</h1></div><div class="header-buttons"><button id="guideButton" class="header-tag" type="button">新手教程</button><button id="expandDashboardButton" class="header-tag" type="button">展开面板</button></div></header>
+  <section id="welcomeCard" class="welcome-card is-hidden" aria-labelledby="welcomeHeading">
+    <h2 id="welcomeHeading">第一次使用？</h2>
+    <p>先添加一套模型配置（知乎直答或任意 OpenAI 兼容 API），然后在任意网页点右下角的「问」，就能把网页内容变成知乎提问草稿。</p>
+    <div class="welcome-actions"><button id="welcomeAddButton" class="qa-primary" type="button">添加模型配置</button><button id="welcomeGuideButton" class="qa-secondary" type="button">查看教程</button></div>
+  </section>
   <section class="active-card"><span class="qa-label">当前使用</span><h2 id="activeName">尚未配置模型</h2><p id="activeDetail">添加你的 API，开始把网页变成好问题。</p></section>
   <section class="format-card" aria-labelledby="formatHeading">
     <div class="section-heading"><h2 id="formatHeading">问题描述形式</h2><span class="site-badge">生成偏好</span></div>
@@ -39,6 +44,16 @@
       <button id="saveSitesButton" class="qa-secondary" type="submit" disabled>保存网站过滤</button>
       <p id="siteStatus" class="settings-status" role="status" aria-live="polite"></p>
     </form>
+    <button id="resetBallButton" class="qa-quiet reset-ball" type="button">恢复「问」按钮默认位置</button>
+  </section>
+  <section id="faq" class="faq-card" aria-labelledby="faqHeading">
+    <div class="section-heading"><h2 id="faqHeading">常见问题与报错</h2><span class="site-badge">排查指南</span></div>
+    <p class="site-help faq-intro">遇到报错时，把提示文字粘贴到下方搜索框，即可找到原因和解决办法。</p>
+    <button id="openFaqButton" class="qa-secondary faq-open" type="button">查看常见问题与报错解决</button>
+    <div class="faq-body">
+      <input id="faqSearch" class="search-input" type="search" placeholder="粘贴报错文字或输入关键字，如「401」「超时」「话题」…" aria-label="搜索常见问题">
+      <div id="faqList" class="faq-list"></div>
+    </div>
   </section>
   <footer>打开网页右下角的「问」，即可分析内容与生成提问。</footer>
 </main>

@@ -7,8 +7,10 @@ globalThis.ZhihuQuestionComposer = (() => {
       visible(el) && /写下你的问题|输入你的问题|请输入问题/.test(el.placeholder || "")));
   }
   function findEntry() {
+    // Runs on a polling loop: skip large containers before reading their full
+    // text, and measure layout only for the few text matches.
     const entries = [...document.querySelectorAll("main div, main button, main a, header button, [role=banner] button")]
-      .filter((el) => visible(el) && !el.disabled && /^(提问题|提问)$/.test(el.textContent.trim()));
+      .filter((el) => !(el.childElementCount > 3) && !el.disabled && /^(提问题|提问)$/.test(el.textContent.trim()) && visible(el));
     // The current homepage uses a clickable DIV rather than a button.
     return unique(entries.filter((el) => !entries.some((other) => other !== el && el.contains(other))));
   }
