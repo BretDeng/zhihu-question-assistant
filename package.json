@@ -1,6 +1,6 @@
 {
   "name": "zhihu-question-assistant",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "private": true,
   "type": "module",
   "description": "网页转知乎提问草稿的纯 Chrome 扩展，支持自带 API Key、知乎直答、可拖动面板与网站过滤",

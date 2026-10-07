@@ -32,7 +32,10 @@ function element(tag, attrs = {}, ...children) {
   return node;
 }
 function documentFor(hostname, ...children) {
-  const root = element("html", {}, element("body", {}, ...children));
+  return documentWithBody(hostname, {}, ...children);
+}
+function documentWithBody(hostname, bodyAttrs, ...children) {
+  const root = element("html", {}, element("body", bodyAttrs, ...children));
   const doc = { location: { hostname }, querySelectorAll: selector => root.querySelectorAll(selector), defaultView: { getComputedStyle: node => ({ display: "block", visibility: "visible", ...node.style }) } };
   const assign = node => { node.ownerDocument = doc; for (const child of node.childNodes || []) assign(child); };
   assign(root); return doc;
@@ -72,6 +75,18 @@ test("multiple articles are evaluated instead of discarded, and prose-only gener
   assert.equal(extractor.extract(doc), `${first}\n${second}`);
   const legacy = documentFor("example.com", element("div", {}, element("p", {}, first), element("p", {}, second)));
   assert.equal(extractor.extract(legacy), `${first}\n${second}`);
+});
+test("WeChat articles are read even though the page body carries a comment_feature class", () => {
+  const content = element("div", { id: "js_content", class: "rich_media_content js_underline_content" },
+    element("section", {}, element("span", {}, first)), element("p", {}, element("span", {}, second)),
+    element("div", { id: "js_cmt_area", class: "comment_area" }, "留言区内容".repeat(40)));
+  const doc = documentWithBody("mp.weixin.qq.com", { id: "activity-detail", class: "zh_CN wx_wap_page mm_appmsg comment_feature discuss_tab" },
+    element("div", { id: "js_article", class: "rich_media" }, element("h1", { id: "activity-name" }, "标题"), content));
+  const result = extractor.extractDetailed(doc);
+  assert.equal(result.text, `${first}\n${second}`);
+  assert.equal(result.originalUnavailableReason, "");
+  const sidebar = documentWithBody("example.com", { class: "has-sidebar" }, element("article", {}, element("p", {}, first)), element("div", { class: "sidebar" }, element("p", {}, second)));
+  assert.equal(extractor.extract(sidebar), first);
 });
 test("never falls back to whole body or navigation-heavy main; missing Caixin body is a clear failure", () => {
   for (const hostname of ["example.com", "finance.caixin.com"]) {

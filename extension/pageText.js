@@ -1,6 +1,6 @@
 globalThis.ZhihuPageText = (() => {
   const OMIT = "nav,aside,footer,form,button,input,select,textarea,script,style,noscript,template,svg,iframe,[hidden],[aria-hidden='true'],[role='navigation'],[role='dialog'],[role='menu'],[role='toolbar'],#zhihu-question-assistant-root,#zhihu-question-draft-root";
-  const BODY_SELECTORS = "[itemprop='articleBody'],.article-content,.articleContent,.article-body,.articleBody,.entry-content,.post-content,.post-body,#article-content,#articleContent";
+  const BODY_SELECTORS = "[itemprop='articleBody'],.article-content,.articleContent,.article-body,.articleBody,.entry-content,.post-content,.post-body,#article-content,#articleContent,#js_content,.rich_media_content";
   const BLOCKS = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "BLOCKQUOTE", "PRE", "TR", "SECTION", "ARTICLE"]);
   const NOISE = /(?:^|[\s_-])(?:sidebar|recommend(?:ation)?s?|related|comments?|share|social|breadcrumb|advert(?:isement)?|ads|paywall|subscribe|toolbar|navigation|menu)(?:$|[\s_-])/i;
 
@@ -14,8 +14,10 @@ globalThis.ZhihuPageText = (() => {
     }
     function omitted(element) {
       if (exclusions.has(element)) return exclusions.get(element);
+      // Page-level classes describe site features (WeChat's body has "comment_feature"), not noise regions.
+      const shell = element.tagName === "BODY" || element.tagName === "HTML";
       // Match Caixin's verified AI-instruction marker, not words in real prose.
-      const result = element.matches(OMIT) || NOISE.test(`${element.id} ${element.getAttribute("class") || ""}`) || (caixin && element.matches(".aitt")) || !visible(element);
+      const result = element.matches(OMIT) || (!shell && NOISE.test(`${element.id} ${element.getAttribute("class") || ""}`)) || (caixin && element.matches(".aitt")) || !visible(element);
       exclusions.set(element, result);
       return result;
     }
