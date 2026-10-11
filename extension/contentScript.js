@@ -30,11 +30,9 @@
   const shadow = host.attachShadow({ mode: "closed" });
   shadow.innerHTML = `
     <style>${getStyles()}</style>
-    <button class="floating-ball" type="button" aria-label="打开知乎提问助手" title="知乎提问助手">
-      <span>问</span>
-    </button>
+    <div class="assistant-dock">
     <section class="panel" aria-label="知乎提问助手">
-      <header class="panel-header">
+      <header class="panel-header" title="按住拖动">
         <div>
           <p class="eyebrow">QUESTION LAB</p>
           <h1>知乎提问助手</h1>
@@ -45,17 +43,12 @@
         </div>
       </header>
       <div class="panel-body">
-        <section class="onboarding is-hidden" aria-label="三步上手">
-          <p class="onboarding-title">三步上手</p>
-          <ol>
-            <li><b>配置模型</b>：点「选择模型」，添加知乎直答或任意 OpenAI 兼容 API。</li>
-            <li><b>分析网页</b>：可先选中一段文字，再点「分析当前网页」，生成 6 个提问草稿。</li>
-            <li><b>去知乎提问</b>：编辑标题、描述和话题后点「去知乎提问」，助手会自动填写，由你审核发布。</li>
-          </ol>
-          <p class="onboarding-tip">「问」按钮和面板标题栏都可拖动；不想在某个网站显示，可在设置里加入网站过滤。</p>
+        <section class="onboarding is-hidden" aria-label="一步一步上手">
+          <p class="onboarding-title">第 <span class="onboarding-index">1</span> 步，共 3 步</p>
+          <p class="onboarding-text"></p>
           <div class="onboarding-actions">
-            <button class="onboarding-guide qa-quiet" type="button">查看完整教程</button>
-            <button class="onboarding-done qa-secondary" type="button">知道了</button>
+            <button class="onboarding-guide qa-quiet" type="button">看教程</button>
+            <button class="onboarding-next qa-secondary" type="button">下一步</button>
           </div>
         </section>
         <div class="panel-toolbar">
@@ -73,8 +66,13 @@
         <p class="timing-status" role="status"></p>
       </div>
     </section>
+    <button class="floating-ball" type="button" aria-label="打开知乎提问助手" title="知乎提问助手 · 按住拖动">
+      <span>问</span>
+    </button>
+    </div>
   `;
 
+  const dock = shadow.querySelector(".assistant-dock");
   const ball = shadow.querySelector(".floating-ball");
   const panel = shadow.querySelector(".panel");
   const closeButton = shadow.querySelector(".close-button");
@@ -121,19 +119,40 @@
   modelSwitch.onclick = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS" }).catch(() => {});
   const openGuide = () => chrome.runtime.sendMessage({ type: "OPEN_GUIDE" }).catch(() => {});
   const onboarding = shadow.querySelector(".onboarding");
-  shadow.querySelector(".guide-button").addEventListener("click", openGuide);
-  shadow.querySelector(".onboarding-guide").addEventListener("click", openGuide);
-  shadow.querySelector(".onboarding-done").addEventListener("click", () => {
+  const onboardingSteps = [
+    "点「选择模型」，添加知乎直答，或者填入你自己的 API。",
+    "点「分析当前网页」。如果只想问某一段，先用鼠标把那段选中。",
+    "改好标题和描述，点「去知乎提问」。助手会填好内容，由你自己点发布。",
+  ];
+  let onboardingStep = 0;
+  function renderOnboarding() {
+    shadow.querySelector(".onboarding-index").textContent = String(onboardingStep + 1);
+    shadow.querySelector(".onboarding-text").textContent = onboardingSteps[onboardingStep];
+    shadow.querySelector(".onboarding-next").textContent = onboardingStep === onboardingSteps.length - 1 ? "知道了" : "下一步";
+  }
+  function finishOnboarding() {
     onboarding.classList.add("is-hidden");
     chrome.runtime.sendMessage({ type: "SET_ONBOARDING_SEEN" }).catch(() => {});
+    layoutDock();
+  }
+  renderOnboarding();
+  shadow.querySelector(".guide-button").addEventListener("click", openGuide);
+  shadow.querySelector(".onboarding-guide").addEventListener("click", openGuide);
+  shadow.querySelector(".onboarding-next").addEventListener("click", () => {
+    if (onboardingStep < onboardingSteps.length - 1) { onboardingStep += 1; renderOnboarding(); layoutDock(); return; }
+    finishOnboarding();
   });
   chrome.runtime.sendMessage({ type: "GET_UI_STATE" }).then(reply => {
     if (!reply?.ok) return;
     if (!reply.data.onboardingSeen) onboarding.classList.remove("is-hidden");
     const saved = reply.data.ballPosition;
-    if (saved && !ballDrag.moved) {
-      const rect = ball.getBoundingClientRect();
-      ballDrag.moveTo(saved.x * (innerWidth - rect.width), saved.y * (innerHeight - rect.height));
+    if (saved && !dockDragged) {
+      const ballSize = 48;
+      const left = saved.x * Math.max(1, innerWidth - ballSize);
+      const top = saved.y * Math.max(1, innerHeight - ballSize);
+      anchor.right = innerWidth - left - ballSize;
+      anchor.bottom = innerHeight - top - ballSize;
+      layoutDock();
     }
   }).catch(() => {});
   function refreshActiveModel() {
@@ -153,27 +172,117 @@
   }
   refreshActiveModel();
 
-  const ballDrag = ZhihuDraggable.attach(ball, ball, { onDragEnd: (rect) => {
+  // The bubble and the question panel share one dock, anchored at the bubble's
+  // bottom-right, so opening or dragging always keeps them attached.
+  const anchor = { right: 22, bottom: 24 };
+  let dockDragged = false;
+  let drag = null;
+  let suppressClick = false;
+  function layoutDock() {
+    const margin = 8;
+    const ballSize = 48;
+    const open = panel.classList.contains("is-open");
+    // The anchor is the bubble. The panel hangs off it and must not push it.
+    anchor.right = Math.min(Math.max(margin, anchor.right), Math.max(margin, innerWidth - ballSize - margin));
+    anchor.bottom = Math.min(Math.max(margin, anchor.bottom), Math.max(margin, innerHeight - ballSize - margin));
+    const ballLeft = innerWidth - anchor.right - ballSize;
+    const ballTop = innerHeight - anchor.bottom - ballSize;
+    const panelWidth = Math.min(360, innerWidth - margin * 2);
+    const alignStart = open && ballLeft + ballSize - panelWidth < margin;
+    const spaceAbove = ballTop - 12 - margin;
+    const spaceBelow = anchor.bottom - 12 - margin;
+    const flip = open && spaceAbove < 180 && spaceBelow > spaceAbove;
+    dock.style.alignItems = alignStart ? "flex-start" : "flex-end";
+    panel.style.order = flip ? "1" : "0";
+    ball.style.order = flip ? "0" : "1";
+    if (open) {
+      const maxHeight = `${Math.min(700, Math.max(120, flip ? spaceBelow : spaceAbove))}px`;
+      if (panel.style.maxHeight !== maxHeight) panel.style.maxHeight = maxHeight;
+    }
+    const next = {
+      left: alignStart ? `${ballLeft}px` : "auto",
+      right: alignStart ? "auto" : `${anchor.right}px`,
+      top: flip ? `${ballTop}px` : "auto",
+      bottom: flip ? "auto" : `${anchor.bottom}px`,
+    };
+    if (dock.style.left === next.left && dock.style.right === next.right && dock.style.top === next.top && dock.style.bottom === next.bottom) return;
+    Object.assign(dock.style, next);
+  }
+  function saveBallPosition() {
+    const rect = ball.getBoundingClientRect();
     const free = (size, length) => Math.max(1, size - length);
     const clamp = (value) => Math.min(1, Math.max(0, value));
     chrome.runtime.sendMessage({ type: "SET_BALL_POSITION", position: {
       x: clamp(rect.left / free(innerWidth, rect.width)),
       y: clamp(rect.top / free(innerHeight, rect.height)),
     } }).catch(() => {});
-  } });
-  const panelDrag = ZhihuDraggable.attach(panel, shadow.querySelector(".panel-header"));
-  closePanel = () => panel.classList.remove("is-open");
+  }
+  function syncAnchorToVisual() {
+    const rect = ball.getBoundingClientRect();
+    anchor.right = innerWidth - rect.right;
+    anchor.bottom = innerHeight - rect.bottom;
+  }
+  function onDragDown(event) {
+    if (event.button !== 0 || event.isPrimary === false) return;
+    const handle = event.currentTarget;
+    const control = event.target.closest?.("button,input,textarea,select,a,[contenteditable=true]");
+    if (control && control !== handle) return;
+    syncAnchorToVisual();
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, right: anchor.right, bottom: anchor.bottom, active: false, handle };
+    suppressClick = false;
+    handle.setPointerCapture(event.pointerId);
+  }
+  function onDragMove(event) {
+    if (!drag || drag.id !== event.pointerId || drag.handle !== event.currentTarget) return;
+    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+    if (!drag.active && Math.hypot(dx, dy) < 5) return;
+    drag.active = true;
+    suppressClick = true;
+    dockDragged = true;
+    event.preventDefault();
+    anchor.right = drag.right - dx;
+    anchor.bottom = drag.bottom - dy;
+    layoutDock();
+  }
+  function onDragEnd(event) {
+    if (!drag || drag.id !== event.pointerId || drag.handle !== event.currentTarget) return;
+    const dragged = drag.active;
+    drag = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (dragged) saveBallPosition();
+  }
+  function onDragClick(event) {
+    if (!suppressClick || event.detail === 0) return;
+    suppressClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+  for (const handle of [ball, shadow.querySelector(".panel-header")]) {
+    handle.style.cursor = "grab";
+    handle.style.touchAction = "none";
+    handle.style.userSelect = "none";
+    handle.addEventListener("pointerdown", onDragDown);
+    handle.addEventListener("pointermove", onDragMove);
+    handle.addEventListener("pointerup", onDragEnd);
+    handle.addEventListener("pointercancel", onDragEnd);
+    handle.addEventListener("lostpointercapture", onDragEnd);
+    handle.addEventListener("click", onDragClick, true);
+  }
+  window.addEventListener("resize", layoutDock);
+  new ResizeObserver(layoutDock).observe(dock);
+  layoutDock();
+  function setPanelOpen(open) {
+    panel.classList.toggle("is-open", open);
+    layoutDock();
+  }
+  closePanel = () => setPanelOpen(false);
   ball.addEventListener("click", () => {
-    panel.classList.toggle("is-open");
-    if (panel.classList.contains("is-open") && ballDrag.moved && !panelDrag.moved) {
-      const anchor = ball.getBoundingClientRect(), rect = panel.getBoundingClientRect();
-      panelDrag.moveTo(anchor.right - rect.width, anchor.top >= rect.height + 20 ? anchor.top - rect.height - 12 : anchor.bottom + 12);
-    }
+    setPanelOpen(!panel.classList.contains("is-open"));
     refreshActiveModel();
   });
-  closeButton.addEventListener("click", () => panel.classList.remove("is-open"));
+  closeButton.addEventListener("click", () => setPanelOpen(false));
   panel.addEventListener("keydown", event => {
-    if (event.key === "Escape") { panel.classList.remove("is-open"); ball.focus(); }
+    if (event.key === "Escape") { setPanelOpen(false); ball.focus(); }
   });
   analyzeButton.addEventListener("click", analyzeCurrentPage);
 
@@ -210,7 +319,7 @@
       }
 
       response.data.items.forEach((item, index) => acceptItem(item, index));
-      if (!onboarding.classList.contains("is-hidden")) shadow.querySelector(".onboarding-done").click();
+      if (!onboarding.classList.contains("is-hidden")) finishOnboarding();
       const total = Math.round(performance.now() - started);
       const stats = response.data.timings || {};
       timingElement.textContent = `首个草稿 ${(currentRequest.firstDraftMs / 1000).toFixed(1)} 秒 · 总耗时 ${(total / 1000).toFixed(1)} 秒`;
@@ -267,7 +376,7 @@
 
       const number = document.createElement("span");
       number.className = "number";
-      number.textContent = `问题 ${String(index + 1).padStart(2, "0")}${item.descriptionMode === "original" ? " · 网页原文" : ""}${item.originalPartial ? " · 已加载部分" : ""}`;
+      number.textContent = `问题 ${String(index + 1).padStart(2, "0")}${item.descriptionMode === "original" ? " · 网页原文" : ""}${item.originalPartial ? " · 已加载部分" : ""}${item.descriptionClipped ? " · 含引用已截取至 3000 字" : ""}`;
 
       heading.append(number);
 
@@ -281,7 +390,7 @@
       descriptionInput.setAttribute("aria-label", `问题 ${index + 1} 描述`);
       descriptionInput.placeholder = "补充提问背景与讨论点";
       descriptionInput.value = item.description || "";
-      descriptionInput.maxLength = item.descriptionLimit || 3000;
+      descriptionInput.maxLength = Number.isInteger(item.descriptionLimit) ? item.descriptionLimit : 3000;
       const topicLabel = document.createElement("label");
       topicLabel.className = "qa-label topic-label";
       topicLabel.textContent = "话题建议";
@@ -302,6 +411,7 @@
             description: descriptionInput.value,
             descriptionMode: item.descriptionMode || "summary",
             originalPartial: item.originalPartial === true,
+            descriptionClipped: item.descriptionClipped === true,
             sourceUrl,
             keywords: topicInput.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
           }});
@@ -347,10 +457,12 @@
   function getStyles() {
     return `:host{all:initial} ${globalThis.ZhihuUiTheme || ""}
       button,input,textarea{font-family:inherit}
-      .floating-ball{position:fixed;right:22px;bottom:24px;z-index:2147483647;width:48px;height:48px;border:1px solid #dcd8ff;border-radius:16px;color:var(--qa-accent);background:white;box-shadow:var(--qa-shadow);font-size:20px;font-weight:600}
+      .assistant-dock{position:fixed;right:22px;bottom:24px;z-index:2147483646;display:flex;flex-direction:column;align-items:flex-end;gap:12px;width:max-content;max-width:calc(100vw - 16px)}
+      .floating-ball{position:relative;flex:none;width:48px;height:48px;border:1px solid #dcd8ff;border-radius:16px;color:var(--qa-accent);background:white;box-shadow:var(--qa-shadow);font-size:20px;font-weight:600}
       .floating-ball:hover{background:var(--qa-soft)}
-      .panel{position:fixed;right:22px;bottom:86px;z-index:2147483646;display:flex;flex-direction:column;width:min(360px,calc(100vw - 28px));max-height:min(700px,calc(100vh - 108px));overflow:hidden;color:var(--qa-ink);background:var(--qa-bg);border:1px solid var(--qa-line);border-radius:18px;box-shadow:0 4px 8px #21213408,0 20px 60px #21213424;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .18s,transform .18s}
-      .panel.is-open{opacity:1;pointer-events:auto;transform:none}
+      .panel{position:relative;display:none;flex-direction:column;width:min(360px,calc(100vw - 28px));max-height:min(700px,calc(100vh - 108px));overflow:hidden;color:var(--qa-ink);background:var(--qa-bg);border:1px solid var(--qa-line);border-radius:18px;box-shadow:0 4px 8px #21213408,0 20px 60px #21213424}
+      .panel.is-open{display:flex;animation:qa-rise .18s ease}
+      @keyframes qa-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
       .panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--qa-line);background:#fafafd}
       .eyebrow{margin:0 0 2px;color:var(--qa-muted);font-size:9px;font-weight:600;letter-spacing:.12em}h1{margin:0;font-size:18px;letter-spacing:-.03em;line-height:1.4}
       .panel-body{min-height:0;overflow:auto;padding:12px}
@@ -359,8 +471,8 @@
       .model-switch.needs-setup{color:#5140a9;border-color:#bcb3ff;background:var(--qa-soft)}
       .header-actions{display:flex;gap:2px}
       .onboarding{margin:0 0 12px;padding:12px 14px;background:white;border:1px solid #dcd8ff;border-radius:12px;font-size:12px;line-height:1.65}
-      .onboarding-title{margin:0 0 6px;font-weight:600;color:#4031bd}.onboarding ol{margin:0;padding-left:18px}.onboarding li{margin:4px 0}.onboarding b{font-weight:600}
-      .onboarding-tip{margin:8px 0 0;color:var(--qa-muted);font-size:11px}.onboarding-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}.onboarding-actions button{font-size:11px;padding:6px 10px}
+      .onboarding-title{margin:0 0 6px;font-weight:600;color:#4031bd}
+      .onboarding-text{margin:0}.onboarding-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}.onboarding-actions button{font-size:11px;padding:6px 10px}
       .analyze-button{border:1px solid var(--qa-accent);border-radius:10px;padding:9px 12px;color:#fff;background:var(--qa-accent);font-size:12px;font-weight:600;white-space:nowrap}
       .analyze-button:hover{background:#5140eb}.loading,.error,.empty-state{margin-top:12px;padding:12px 14px;border-radius:12px;font-size:12px;line-height:1.6}
       .loading{background:var(--qa-soft);color:#5140a9}.spinner{display:none}.error{color:var(--qa-danger);background:#fff1f2;border:1px solid #f1d4db}.empty-state{background:white;color:var(--qa-muted);border:1px dashed var(--qa-line)}
@@ -373,7 +485,6 @@
       .draft-description{min-height:100px;font-size:12px;border-color:transparent;padding:6px 4px;background:white;line-height:1.75}
       .topic-label{margin-top:10px}.topic-label input{font-size:11px;font-weight:400;background:var(--qa-soft);border-color:transparent;margin-top:6px;line-height:1.6}
       .open-button{width:100%;font-size:12px;margin-top:4px}
-      @media(max-width:520px){.floating-ball{right:14px;bottom:16px}.panel{right:14px;bottom:76px;max-height:calc(100vh - 94px)}}
     `;
   }
   }

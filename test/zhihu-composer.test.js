@@ -120,12 +120,16 @@ test("ambiguous entries are not clicked", () => {
   ];
   assert.equal(f.bridge.findEntry(), null);
 });
-test("long original descriptions reach the editor intact with one source citation", async () => {
+test("long original descriptions are clipped so the citation still fits in 3,000 characters", async () => {
   const f = fixture();
   const original = `${"原文ABC2026与“原文引号”。\n".repeat(900)}最后一段。`;
   const input = { ...draft, description: original };
   assert.equal((await f.bridge.fillDraft(input)).ok, true);
-  assert.equal(f.editor.innerText, `${original}\n\n引用来源：https://example.com/article`);
+  const filled = f.editor.innerText;
+  assert.ok(filled.length <= 3000);
+  assert.match(filled, /^原文ABC2026与“原文引号”。/);
+  assert.match(filled, /引用来源：https:\/\/example.com\/article$/);
+  assert.equal(filled.includes("最后一段。"), false);
   assert.equal((await f.bridge.fillDraft(input)).ok, true);
   assert.equal(f.events.filter(type => type === "paste").length, 1);
 });

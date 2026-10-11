@@ -34,6 +34,7 @@
     const section = root.querySelector("section");
     if (draft.descriptionMode === "original") root.querySelector("h2").textContent = draft.originalPartial ? "提问草稿 · 已加载原文" : "提问草稿 · 网页原文";
     if (draft.originalPartial) root.querySelector(".intro").textContent = "描述仅包含来源网页已加载的部分正文，不是全文。内容与话题会自动填入知乎，请审核后发布。";
+    if (draft.descriptionClipped) root.querySelector(".intro").textContent = `问题描述已按知乎上限截取，加上「引用来源」后不超过 3000 字。${draft.originalPartial ? "页面上也只加载了部分正文。" : ""}内容与话题会自动填入知乎，请审核后发布。`;
     const drag = globalThis.ZhihuDraggable?.attach(section, root.querySelector(".draft-header"));
     const details = root.querySelector(".details");
     const status = document.createElement("p");
@@ -70,6 +71,13 @@
       if (key === "description") button.setAttribute("aria-label", "复制问题描述及引用来源");
       heading.append(fieldLabel, button); group.append(heading, field); details.append(group);
     }
+    const syncDescriptionLimit = () => {
+      const room = ZhihuQuestionComposer.descriptionBudget(fields.sourceUrl.value);
+      fields.description.maxLength = room;
+      if (fields.description.value.length > room) fields.description.value = ZhihuQuestionComposer.clipBody(fields.description.value, room);
+    };
+    fields.sourceUrl.addEventListener("input", syncDescriptionLimit);
+    syncDescriptionLimit();
     const fill = document.createElement("button");
     fill.textContent = "打开提问并填写";
     fill.className = "qa-primary";

@@ -12,14 +12,23 @@ globalThis.ZhihuPageText = (() => {
       const style = doc.defaultView?.getComputedStyle(element);
       return !element.hidden && style?.display !== "none" && style?.visibility !== "hidden" && style?.visibility !== "collapse" && style?.contentVisibility !== "hidden";
     }
+    function classLabel(element) {
+      // paywall-content is the readable body on sites such as Foreign Affairs.
+      // Remove that token before the noise test so the gate named "paywall" is still skipped.
+      return `${element.id} ${element.getAttribute("class") || ""}`.replace(/(?:^|[\s_-])paywall[-_]content(?=$|[\s_-])/ig, " ");
+    }
     function omitted(element) {
       if (exclusions.has(element)) return exclusions.get(element);
       // Page-level classes describe site features (WeChat's body has "comment_feature"), not noise regions.
       const shell = element.tagName === "BODY" || element.tagName === "HTML";
       // Match Caixin's verified AI-instruction marker, not words in real prose.
-      const result = element.matches(OMIT) || (!shell && NOISE.test(`${element.id} ${element.getAttribute("class") || ""}`)) || (caixin && element.matches(".aitt")) || !visible(element);
+      const result = element.matches(OMIT) || (!shell && NOISE.test(classLabel(element))) || (caixin && element.matches(".aitt")) || !visible(element);
       exclusions.set(element, result);
       return result;
+    }
+    function paywallGate(element) {
+      const raw = `${element.id} ${element.getAttribute("class") || ""}`;
+      return /(?:^|[\s_-])paywall(?:$|[\s_-])/i.test(raw) && !/(?:^|[\s_-])paywall[-_]content(?:$|[\s_-])/i.test(raw);
     }
     function allowed(element) {
       for (let node = element; node; node = node.parentElement) if (omitted(node)) return false;
@@ -57,7 +66,7 @@ globalThis.ZhihuPageText = (() => {
       for (let node = element; node; node = node.parentElement) if (!visible(node)) return false;
       return true;
     }
-    return { block, best, rendered, caixin };
+    return { block, best, rendered, caixin, paywallGate };
   }
 
   function extractDetailed(doc = document) {
@@ -74,8 +83,9 @@ globalThis.ZhihuPageText = (() => {
         text = read.best(parents, true);
       }
     }
-    const partial = read.caixin && [...doc.querySelectorAll("#chargeWall")].some(element => read.rendered(element) && /订阅后继续阅读|订阅后阅读/.test(element.innerText || ""));
-    return { text, originalPartial: Boolean(partial), originalUnavailableReason:
+    const caixinPartial = read.caixin && [...doc.querySelectorAll("#chargeWall")].some(element => read.rendered(element) && /订阅后继续阅读|订阅后阅读/.test(element.innerText || ""));
+    const paywallPartial = Boolean(text) && [...doc.querySelectorAll("div,section,aside")].some(element => read.paywallGate(element) && read.rendered(element) && /finish reading|continue reading|keep reading|订阅后|继续阅读/.test(element.innerText || ""));
+    return { text, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
       !text ? "未找到可靠的文章正文，已停止复制页面菜单和其他杂项。请等待正文加载后重试，或切换为「概括提问」并选中所需内容。" : "" };
   }
   return { extract: (doc = document) => extractDetailed(doc).text, extractDetailed, extractBlock: element => reader(element.ownerDocument || document).block(element) };

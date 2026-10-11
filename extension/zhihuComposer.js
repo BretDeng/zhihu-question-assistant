@@ -23,10 +23,41 @@ globalThis.ZhihuQuestionComposer = (() => {
       return url.href;
     } catch { return ""; }
   }
+  const DESCRIPTION_LIMIT = 3000;
+  function citationSuffix(source) {
+    const url = sourceURL(source);
+    return url ? `\n\n引用来源：${url}` : "";
+  }
+  function descriptionBudget(source) {
+    return Math.max(0, DESCRIPTION_LIMIT - citationSuffix(source).length);
+  }
+  function clipBody(text, room) {
+    const sourceText = String(text || "").trim();
+    if (room <= 0 || !sourceText) return "";
+    if (sourceText.length <= room) return sourceText;
+    const lines = sourceText.split("\n");
+    let size = 0;
+    const kept = [];
+    for (const line of lines) {
+      const extra = kept.length ? 1 : 0;
+      if (size + extra + line.length > room) break;
+      kept.push(line);
+      size += extra + line.length;
+    }
+    if (kept.length) return kept.join("\n");
+    const chunk = sourceText.slice(0, room);
+    const end = Math.max(chunk.lastIndexOf("。"), chunk.lastIndexOf("！"), chunk.lastIndexOf("？"));
+    return (end >= Math.floor(room * 0.6) ? chunk.slice(0, end + 1) : chunk).trimEnd();
+  }
   function buildDescription(description, source) {
     const text = String(description || "").trim();
     const url = sourceURL(source);
-    return url && !text.includes(url) ? `${text}${text ? "\n\n" : ""}引用来源：${url}` : text;
+    if (!url || text.includes(url)) return text.slice(0, DESCRIPTION_LIMIT);
+    const suffix = citationSuffix(source);
+    const body = clipBody(text, DESCRIPTION_LIMIT - suffix.length);
+    if (!body) return `引用来源：${url}`;
+    const combined = `${body}${suffix}`;
+    return combined.length <= DESCRIPTION_LIMIT ? combined : combined.slice(0, DESCRIPTION_LIMIT);
   }
   function setTitle(input, value) {
     const previous = input.value.trim();
@@ -112,5 +143,5 @@ globalThis.ZhihuQuestionComposer = (() => {
       ? { ok: true, message: "已填写标题、描述和引用来源。请选择真实话题，检查后自行发布。" }
       : { ok: false, message: "已填写标题；知乎未接受自动粘贴，请复制「问题描述及引用来源」手动粘贴。" };
   }
-  return Object.freeze({ fillDraft, buildDescription, findEntry, findTitle, setTitle });
+  return Object.freeze({ fillDraft, buildDescription, descriptionBudget, clipBody, findEntry, findTitle, setTitle });
 })();

@@ -1,7 +1,7 @@
 import { generateQuestions } from "./modelClient.js";
 import { activeModelConfig } from "./modelProfiles.js";
 import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
-import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription } from "./draftPreferences.js";
+import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription, fitDescriptionBody } from "./draftPreferences.js";
 chrome.storage.local?.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
 const ONBOARDING_KEY = "onboardingSeen";
 const BALL_POSITION_KEY = "ballPosition";
@@ -127,13 +127,16 @@ async function updateDraftLifecycle(message, tabId) {
 async function openZhihuDraft(payload) {
   if (typeof payload?.question !== "string" || !payload.question.trim()) throw new Error("缺少标题");
   const descriptionMode = normalizeDescriptionMode(payload.descriptionMode);
-  const description = descriptionMode === "original" ? originalDescription(payload.description) : String(payload.description || "").slice(0, 3000);
+  const sourceUrl = safeSourceUrl(payload.sourceUrl);
+  const normalized = descriptionMode === "original" ? originalDescription(payload.description) : String(payload.description || "").trim();
+  const description = fitDescriptionBody(normalized, sourceUrl);
   const draft = {
     question: payload.question.trim().slice(0, 500),
     description, descriptionMode,
     originalPartial: descriptionMode === "original" && payload.originalPartial === true,
+    descriptionClipped: payload.descriptionClipped === true || description.length < normalized.length,
     keywords: Array.isArray(payload.keywords) ? payload.keywords.filter((x) => typeof x === "string").slice(0, 5).map((x) => x.slice(0, 100)) : [],
-    sourceUrl: safeSourceUrl(payload.sourceUrl),
+    sourceUrl,
     createdAt: Date.now(),
   };
   // Bind each draft to its destination tab; never put its contents in a URL.

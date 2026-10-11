@@ -59,7 +59,7 @@ function renderDescriptionMode(mode) {
   modeButtons[0].setAttribute("aria-pressed", String(mode === "summary"));
   modeButtons[1].setAttribute("aria-pressed", String(mode === "original"));
   $("#descriptionModeHint").textContent = mode === "original"
-    ? "标题 + 当前网页已加载的正文。仅加载部分时也可使用。保留原文，段落之间无空行；引用链接附在末尾。原文可在生成后编辑。"
+    ? "标题 + 当前网页已加载的正文。仅加载部分时也可使用。保留原文，段落之间无空行；引用链接附在末尾。正文加引用来源一共不超过 3000 字，超出的段落不会写入。原文可在生成后编辑。"
     : "标题 + 材料概括与讨论问题，由模型生成精简的问题描述。";
 }
 async function loadDescriptionMode() {

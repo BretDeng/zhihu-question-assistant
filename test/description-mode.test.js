@@ -20,7 +20,8 @@ test("preferences default to summary and decoration doesn't change titles or top
   const draft = preferences.prepareDescription("original", { mainText: "完整原文\n\n尾段" })(item);
   assert.equal(draft.description, "完整原文\n尾段");
   assert.equal(draft.question, item.question); assert.deepEqual(draft.keywords, item.keywords);
-  assert.equal(draft.descriptionLimit, preferences.MAX_ORIGINAL_LENGTH);
+  assert.equal(draft.descriptionLimit, preferences.ZHIHU_DESCRIPTION_LIMIT);
+  assert.equal(draft.descriptionClipped, false);
 });
 test("original-mode model input remains bounded and asks for empty description for both providers", async () => {
   const page = { title: "网页", url: "https://example.com", mainText: `${"文".repeat(18000)}原文尾部不发送给模型` };
@@ -53,7 +54,7 @@ function background({ mode = "original", generate } = {}) {
   vm.runInNewContext(worker, { ...preferences, chrome, URL, Date, Error, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }), generateQuestions: generate });
   return { send: message => new Promise(resolve => listener(message, { tab: { id: 7 } }, resolve)), delivered, stored, switchMode: value => { mode = value; } };
 }
-test("background captures original mode for the whole stream and handoff retains more than 3,000 characters", async () => {
+test("background captures original mode for the whole stream and hands off a description that fits with its citation", async () => {
   const original = `${"全文ABC2026“引号”。\n".repeat(1200)}末尾标记。`;
   let finish, reached;
   const ready = new Promise(resolve => { reached = resolve; });
@@ -68,11 +69,18 @@ test("background captures original mode for the whole stream and handoff retains
   await ready; bg.switchMode("summary"); finish();
   const reply = await pending;
   assert.equal(reply.ok, true);
-  for (const message of bg.delivered) assert.equal(message.item.description, original.trim());
-  assert.equal(reply.data.items[5].description, original.trim());
+  for (const message of bg.delivered) {
+    assert.ok(message.item.description.startsWith("全文ABC2026"));
+    assert.equal(message.item.descriptionClipped, true);
+    assert.ok(message.item.description.length <= preferences.ZHIHU_DESCRIPTION_LIMIT);
+  }
+  assert.equal(reply.data.items[5].description, bg.delivered[0].item.description);
   const opened = await bg.send({ type: "OPEN_ZHIHU_DRAFT", payload: { ...reply.data.items[0], sourceUrl: "https://example.com" } });
   assert.equal(opened.ok, true);
-  assert.equal(bg.stored["zhihuDraft:7"].description, original.trim());
+  const stored = bg.stored["zhihuDraft:7"];
+  const suffix = preferences.citationSuffix("https://example.com");
+  assert.equal(stored.descriptionClipped, true);
+  assert.ok(stored.description.length + suffix.length <= preferences.ZHIHU_DESCRIPTION_LIMIT);
 });
 test("oversized original fails before a billable request or tab creation", async () => {
   let called = false;

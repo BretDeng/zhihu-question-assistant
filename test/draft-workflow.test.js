@@ -8,6 +8,7 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
   class Element {
     constructor() { this.value = ""; this.children = []; this.classList = { toggle() {}, contains: () => false }; this.style = { setProperty(key, value) { this[key] = value; }, removeProperty(key) { delete this[key]; } }; }
     append(...items) { this.children.push(...items); }
+    addEventListener() {}
     insertBefore(child) { this.children.unshift(child); }
     setAttribute() {}
     attachShadow() { return root; }
@@ -30,6 +31,8 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
       question: "生成的问题？", description: "描述", sourceUrl: "https://example.com", keywords: ["创新药", "生物医药"], createdAt: Date.now(),
     } }); } } },
     ZhihuQuestionComposer: {
+      descriptionBudget: () => 3000,
+      clipBody: (text, room) => String(text || "").slice(0, room),
       findTitle: () => ({ value: question }),
       fillDraft: async (_draft, { signal }) => {
         if (filling) await filling(signal);
