@@ -17,6 +17,10 @@
   // The remembered selection belongs to one page URL, and is dropped when the
   // user deselects inside the page. Clicking the assistant must keep it.
   let lastSelection = { text: "", url: "" };
+  // Matches the bubble's CSS box, and the budget the worker applies to selections.
+  const BALL_SIZE = 48;
+  const MAX_SELECTION = 12000;
+  const DEFAULT_DESCRIPTION_LIMIT = 3000;
   let pointerInPage = false;
   let isAnalyzing = false;
   let currentRequest = null;
@@ -147,11 +151,10 @@
     if (!reply.data.onboardingSeen) onboarding.classList.remove("is-hidden");
     const saved = reply.data.ballPosition;
     if (saved && !dockDragged) {
-      const ballSize = 48;
-      const left = saved.x * Math.max(1, innerWidth - ballSize);
-      const top = saved.y * Math.max(1, innerHeight - ballSize);
-      anchor.right = innerWidth - left - ballSize;
-      anchor.bottom = innerHeight - top - ballSize;
+      const left = saved.x * Math.max(1, innerWidth - BALL_SIZE);
+      const top = saved.y * Math.max(1, innerHeight - BALL_SIZE);
+      anchor.right = innerWidth - left - BALL_SIZE;
+      anchor.bottom = innerHeight - top - BALL_SIZE;
       layoutDock();
     }
   }).catch(() => {});
@@ -180,21 +183,23 @@
   let suppressClick = false;
   function layoutDock() {
     const margin = 8;
-    const ballSize = 48;
     const open = panel.classList.contains("is-open");
     // The anchor is the bubble. The panel hangs off it and must not push it.
-    anchor.right = Math.min(Math.max(margin, anchor.right), Math.max(margin, innerWidth - ballSize - margin));
-    anchor.bottom = Math.min(Math.max(margin, anchor.bottom), Math.max(margin, innerHeight - ballSize - margin));
-    const ballLeft = innerWidth - anchor.right - ballSize;
-    const ballTop = innerHeight - anchor.bottom - ballSize;
+    anchor.right = Math.min(Math.max(margin, anchor.right), Math.max(margin, innerWidth - BALL_SIZE - margin));
+    anchor.bottom = Math.min(Math.max(margin, anchor.bottom), Math.max(margin, innerHeight - BALL_SIZE - margin));
+    const ballLeft = innerWidth - anchor.right - BALL_SIZE;
+    const ballTop = innerHeight - anchor.bottom - BALL_SIZE;
     const panelWidth = Math.min(360, innerWidth - margin * 2);
-    const alignStart = open && ballLeft + ballSize - panelWidth < margin;
+    const alignStart = open && ballLeft + BALL_SIZE - panelWidth < margin;
     const spaceAbove = ballTop - 12 - margin;
     const spaceBelow = anchor.bottom - 12 - margin;
     const flip = open && spaceAbove < 180 && spaceBelow > spaceAbove;
-    dock.style.alignItems = alignStart ? "flex-start" : "flex-end";
-    panel.style.order = flip ? "1" : "0";
-    ball.style.order = flip ? "0" : "1";
+    // ResizeObserver can re-enter this function; skip unchanged style writes.
+    const alignItems = alignStart ? "flex-start" : "flex-end";
+    if (dock.style.alignItems !== alignItems) dock.style.alignItems = alignItems;
+    const panelOrder = flip ? "1" : "0", ballOrder = flip ? "0" : "1";
+    if (panel.style.order !== panelOrder) panel.style.order = panelOrder;
+    if (ball.style.order !== ballOrder) ball.style.order = ballOrder;
     if (open) {
       const maxHeight = `${Math.min(700, Math.max(120, flip ? spaceBelow : spaceAbove))}px`;
       if (panel.style.maxHeight !== maxHeight) panel.style.maxHeight = maxHeight;
@@ -205,8 +210,7 @@
       top: flip ? `${ballTop}px` : "auto",
       bottom: flip ? "auto" : `${anchor.bottom}px`,
     };
-    if (dock.style.left === next.left && dock.style.right === next.right && dock.style.top === next.top && dock.style.bottom === next.bottom) return;
-    Object.assign(dock.style, next);
+    for (const [key, value] of Object.entries(next)) if (dock.style[key] !== value) dock.style[key] = value;
   }
   function saveBallPosition() {
     const rect = ball.getBoundingClientRect();
@@ -335,7 +339,7 @@
   function extractPageContent() {
     const article = ZhihuPageText.extractDetailed();
     const currentSelection = cleanText(globalThis.getSelection()?.toString() || "");
-    if (currentSelection) lastSelection = { text: currentSelection.slice(0, 12000), url: location.href };
+    if (currentSelection) lastSelection = { text: currentSelection.slice(0, MAX_SELECTION), url: location.href };
     const remembered = lastSelection.url === location.href ? lastSelection.text : "";
 
     return {
@@ -346,7 +350,7 @@
           document.querySelector('meta[property="og:description"]')?.content ||
           "",
       ).slice(0, 1500),
-      selectedText: (currentSelection || remembered).slice(0, 12000),
+      selectedText: (currentSelection || remembered).slice(0, MAX_SELECTION),
       // Preserve the complete extracted text for local original-mode drafts.
       // The model client applies its separate 6,000-character input budget.
       mainText: article.text,
@@ -357,7 +361,7 @@
 
   function rememberSelectedText() {
     const selectedText = cleanText(globalThis.getSelection()?.toString() || "");
-    if (selectedText) lastSelection = { text: selectedText.slice(0, 12000), url: location.href };
+    if (selectedText) lastSelection = { text: selectedText.slice(0, MAX_SELECTION), url: location.href };
     else if (pointerInPage) lastSelection = { text: "", url: "" };
   }
 
@@ -390,7 +394,7 @@
       descriptionInput.setAttribute("aria-label", `问题 ${index + 1} 描述`);
       descriptionInput.placeholder = "补充提问背景与讨论点";
       descriptionInput.value = item.description || "";
-      descriptionInput.maxLength = Number.isInteger(item.descriptionLimit) ? item.descriptionLimit : 3000;
+      descriptionInput.maxLength = Number.isInteger(item.descriptionLimit) ? item.descriptionLimit : DEFAULT_DESCRIPTION_LIMIT;
       const topicLabel = document.createElement("label");
       topicLabel.className = "qa-label topic-label";
       topicLabel.textContent = "话题建议";

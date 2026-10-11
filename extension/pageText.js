@@ -3,6 +3,7 @@ globalThis.ZhihuPageText = (() => {
   const BODY_SELECTORS = "[itemprop='articleBody'],.article-content,.articleContent,.article-body,.articleBody,.entry-content,.post-content,.post-body,#article-content,#articleContent,#js_content,.rich_media_content";
   const BLOCKS = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "BLOCKQUOTE", "PRE", "TR", "SECTION", "ARTICLE"]);
   const NOISE = /(?:^|[\s_-])(?:sidebar|recommend(?:ation)?s?|related|comments?|share|social|breadcrumb|advert(?:isement)?|ads|paywall|subscribe|toolbar|navigation|menu)(?:$|[\s_-])/i;
+  const PAYWALL_TEXT = /finish reading|continue reading|keep reading|订阅后|继续阅读/i;
 
   function reader(doc) {
     const cache = new WeakMap();
@@ -84,7 +85,10 @@ globalThis.ZhihuPageText = (() => {
       }
     }
     const caixinPartial = read.caixin && [...doc.querySelectorAll("#chargeWall")].some(element => read.rendered(element) && /订阅后继续阅读|订阅后阅读/.test(element.innerText || ""));
-    const paywallPartial = Boolean(text) && [...doc.querySelectorAll("div,section,aside")].some(element => read.paywallGate(element) && read.rendered(element) && /finish reading|continue reading|keep reading|订阅后|继续阅读/.test(element.innerText || ""));
+    // Ask the engine for the few paywall-named nodes instead of walking every
+    // div on the page, limiting candidate traversal and innerText reads.
+    const paywallPartial = Boolean(text) && [...doc.querySelectorAll("[class*='paywall' i],[id*='paywall' i]")]
+      .some(element => read.paywallGate(element) && read.rendered(element) && PAYWALL_TEXT.test(element.innerText || ""));
     return { text, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
       !text ? "未找到可靠的文章正文，已停止复制页面菜单和其他杂项。请等待正文加载后重试，或切换为「概括提问」并选中所需内容。" : "" };
   }

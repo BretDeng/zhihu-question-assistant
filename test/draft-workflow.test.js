@@ -21,11 +21,15 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
   const messages = [];
   const hosts = [];
   let setEnabled;
+  let mutationCallback, nextTimer = 0, probes = 0;
+  const timers = new Map();
   const context = {
     Date, AbortController, location: { pathname: "/" },
+    setTimeout(fn) { const id = ++nextTimer; timers.set(id, fn); return id; },
+    clearTimeout(id) { timers.delete(id); },
     document: { documentElement: new Element(), body: new Element(), createElement: () => { const element = new Element(); hosts.push(element); return element; } },
     window: { addEventListener() {} },
-    MutationObserver: class { observe() {} disconnect() {} },
+    MutationObserver: class { constructor(callback) { mutationCallback = callback; } observe() {} disconnect() {} },
     ZhihuSiteAccess: { watch(callback) { setEnabled = callback; callback(enabled); } },
     chrome: { runtime: { sendMessage: async (message) => { messages.push(message); return ({ data: {
       question: "生成的问题？", description: "描述", sourceUrl: "https://example.com", keywords: ["创新药", "生物医药"], createdAt: Date.now(),
@@ -33,7 +37,7 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
     ZhihuQuestionComposer: {
       descriptionBudget: () => 3000,
       clipBody: (text, room) => String(text || "").slice(0, room),
-      findTitle: () => ({ value: question }),
+      findTitle: () => { probes++; return { value: question }; },
       fillDraft: async (_draft, { signal }) => {
         if (filling) await filling(signal);
         if (failure) throw new Error("Editor changed");
@@ -47,8 +51,24 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
   };
   vm.runInNewContext(source, context);
   await new Promise((resolve) => setImmediate(resolve));
-  return { calls, section, details, hosts, messages, setEnabled };
+  return { calls, section, details, hosts, messages, setEnabled,
+    mutate: () => mutationCallback(), timers, probes: () => probes,
+    flush: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
+test("bursts of page mutations schedule one composer probe, and exclusion cancels it", async () => {
+  const workflow = await runWorkflow();
+  const before = workflow.probes();
+  for (let i = 0; i < 30; i++) workflow.mutate();
+  assert.equal(workflow.timers.size, 1);
+  assert.equal(workflow.probes(), before);
+  workflow.flush();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(workflow.probes() > before);
+  workflow.mutate();
+  assert.equal(workflow.timers.size, 1);
+  workflow.setEnabled(false);
+  assert.equal(workflow.timers.size, 0);
+});
 test("topic binding continues when a link-card description fails strict text verification", async () => {
   const { calls, section } = await runWorkflow();
   assert.deepEqual(calls, [{ keywords: ["创新药", "生物医药"], title: "生成的问题？" }]);

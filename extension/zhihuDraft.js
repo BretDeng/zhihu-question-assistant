@@ -90,12 +90,20 @@
     let stopLifecycle = () => {};
     // Also handle a composer opened manually after login or slow page loading.
     // Retry only once per mounted title field, never on every DOM mutation.
-    const observer = new MutationObserver(() => {
+    // findTitle queries the page and reads layout, so coalesce the bursts Zhihu
+    // emits while scrolling instead of probing on every single mutation.
+    let scheduledProbe = 0;
+    const probeComposer = () => {
+      scheduledProbe = 0;
       if (disposed || !siteEnabled || fill.disabled) return;
       const title = ZhihuQuestionComposer.findTitle();
       if (!title || attemptedTitles.has(title)) return;
       attemptedTitles.add(title);
       fill.onclick();
+    };
+    const observer = new MutationObserver(() => {
+      if (disposed || !siteEnabled || fill.disabled) return;
+      scheduledProbe ||= setTimeout(probeComposer, 200);
     });
     fill.onclick = async () => {
       if (disposed || !siteEnabled || fill.disabled) return;
@@ -163,11 +171,11 @@
     applySiteAccess = enabled => {
       if (disposed) return;
       if (enabled) { host.style.removeProperty("display"); observer.observe(document.body, { childList: true, subtree: true }); }
-      else { operation?.abort(); observer.disconnect(); host.style.setProperty("display", "none", "important"); }
+      else { operation?.abort(); observer.disconnect(); clearTimeout(scheduledProbe); scheduledProbe = 0; host.style.setProperty("display", "none", "important"); }
     };
     function dismissDraft() {
       if (disposed) return;
-      disposed = true; operation?.abort(); drag?.destroy(); observer.disconnect(); stopLifecycle(); host.remove(); clearSavedDraft();
+      disposed = true; operation?.abort(); drag?.destroy(); observer.disconnect(); clearTimeout(scheduledProbe); stopLifecycle(); host.remove(); clearSavedDraft();
     }
     const dismiss = document.createElement("button");
     dismiss.className = "qa-quiet dismiss-draft"; dismiss.type = "button"; dismiss.textContent = "×";

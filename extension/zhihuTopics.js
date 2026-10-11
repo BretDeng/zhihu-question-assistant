@@ -1,8 +1,7 @@
 // Use Zhihu's visible topic picker, not an undocumented write API.
 globalThis.ZhihuQuestionTopics = (() => {
   const normalize = (value) => String(value || "").normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase();
-  const visible = (el) => el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
-  const unique = (items) => items.length === 1 ? items[0] : null;
+  const { visible, unique } = globalThis.ZhihuDom;
   const selected = (form) => [...form.querySelectorAll(".TopicInputAlias-tagInput .Tag-content a[href*='/topic/']")].map((el) => el.textContent.trim());
   function findInput(form) {
     return unique([...form.querySelectorAll('.TopicInputAlias-input input[role=combobox], input[placeholder="绑定相关话题可以被更多人看到"]')].filter(visible));

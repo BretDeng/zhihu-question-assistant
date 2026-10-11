@@ -4,6 +4,8 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = await readFile(new URL("../extension/zhihuTopics.js", import.meta.url), "utf8");
+// Loaded before the picker, matching the manifest's content-script order.
+const sharedDom = await readFile(new URL("../extension/zhihuDom.js", import.meta.url), "utf8");
 function fixture({ existing = [], candidates = {}, query = "", edited = false, accepts = true } = {}) {
   const bound = [...existing];
   const searched = [];
@@ -51,6 +53,8 @@ function fixture({ existing = [], candidates = {}, query = "", edited = false, a
     Date: { now: () => time }, setTimeout: (fn) => { time += 120; queueMicrotask(fn); },
     document: { querySelectorAll: () => options },
   };
+  context.globalThis = context;
+  vm.runInNewContext(sharedDom, context);
   vm.runInNewContext(source, context);
   return { bridge: context.ZhihuQuestionTopics, bound, searched, clicked, input };
 }

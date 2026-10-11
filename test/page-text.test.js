@@ -18,8 +18,14 @@ function element(tag, attrs = {}, ...children) {
         if (selector.startsWith("#")) return this.id === selector.slice(1);
         if (selector.startsWith(".")) return (attrs.class || "").split(/\s+/).includes(selector.slice(1));
         if (selector.startsWith("[")) {
-          const [, key, value] = selector.match(/^\[([^=\]]+)(?:='([^']*)')?\]$/);
-          return value === undefined ? key in attrs : attrs[key] === value;
+          // Supports [attr], [attr='value'] and the [attr*=substring] form.
+          const match = selector.match(/^\[([^*=\]]+)(\*?)=?(?:'([^']*)'|([^\]]*?))?( i)?\]$/);
+          if (!match) return false;
+          const [, key, fuzzy, quoted, bare, insensitive] = match;
+          const value = quoted ?? (bare || undefined);
+          const actual = key === "id" ? this.id : attrs[key];
+          if (value === undefined) return key in attrs;
+          return fuzzy ? (insensitive ? String(actual ?? "").toLowerCase().includes(value.toLowerCase()) : String(actual ?? "").includes(value)) : actual === value;
         }
         return this.tagName === selector.toUpperCase();
       });
@@ -42,6 +48,16 @@ function documentWithBody(hostname, bodyAttrs, ...children) {
 }
 const first = "真实正文第一段，保留其中的事实、标点和文字顺序。".repeat(6);
 const second = "真实正文第二段，重复段落也是原文的一部分，不应该被去重。".repeat(5);
+
+test("generic paywall markers preserve readable content and match mixed-case names", () => {
+  for (const className of ["paywall", "Paywall", "PAYWALL"]) {
+    const doc = documentFor("example.com", element("article", { class: "paywall-content" }, element("p", {}, first)),
+      element("div", { class: className }, "Finish reading: subscribe to continue"));
+    const result = extractor.extractDetailed(doc);
+    assert.equal(result.text, first);
+    assert.equal(result.originalPartial, true);
+  }
+});
 
 test("Caixin selects the verified article body, removes aitt but preserves inline links and repeats", () => {
   const body = element("div", { id: "Main_Content_Val" },

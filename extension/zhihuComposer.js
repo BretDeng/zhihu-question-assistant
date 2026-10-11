@@ -1,64 +1,22 @@
 // Runs in the extension's isolated world; uses only the visible question form.
 globalThis.ZhihuQuestionComposer = (() => {
-  const visible = (el) => el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
-  const unique = (items) => items.length === 1 ? items[0] : null;
+  const { visible, unique } = globalThis.ZhihuDom;
   function findTitle() {
     return unique([...document.querySelectorAll(".Ask-form textarea")].filter((el) =>
       visible(el) && /写下你的问题|输入你的问题|请输入问题/.test(el.placeholder || "")));
   }
   function findEntry() {
-    // Runs on a polling loop: skip large containers before reading their full
-    // text, and measure layout only for the few text matches.
+    // Runs on a polling loop over thousands of feed nodes. Order the checks from
+    // cheapest to most expensive: child count, then text length (a label is tiny,
+    // so this skips trimming long card bodies), then the regex, then layout.
     const entries = [...document.querySelectorAll("main div, main button, main a, header button, [role=banner] button")]
-      .filter((el) => !(el.childElementCount > 3) && !el.disabled && /^(提问题|提问)$/.test(el.textContent.trim()) && visible(el));
+      .filter((el) => !(el.childElementCount > 3) && !el.disabled
+        && el.textContent.length <= 16 && /^(提问题|提问)$/.test(el.textContent.trim()) && visible(el));
     // The current homepage uses a clickable DIV rather than a button.
     return unique(entries.filter((el) => !entries.some((other) => other !== el && el.contains(other))));
   }
-  function sourceURL(value) {
-    try {
-      if (typeof value !== "string") return "";
-      const url = new URL(value);
-      if (!/^https?:$/.test(url.protocol) || url.username || url.password || value.length > 4096) return "";
-      url.hash = "";
-      return url.href;
-    } catch { return ""; }
-  }
-  const DESCRIPTION_LIMIT = 3000;
-  function citationSuffix(source) {
-    const url = sourceURL(source);
-    return url ? `\n\n引用来源：${url}` : "";
-  }
-  function descriptionBudget(source) {
-    return Math.max(0, DESCRIPTION_LIMIT - citationSuffix(source).length);
-  }
-  function clipBody(text, room) {
-    const sourceText = String(text || "").trim();
-    if (room <= 0 || !sourceText) return "";
-    if (sourceText.length <= room) return sourceText;
-    const lines = sourceText.split("\n");
-    let size = 0;
-    const kept = [];
-    for (const line of lines) {
-      const extra = kept.length ? 1 : 0;
-      if (size + extra + line.length > room) break;
-      kept.push(line);
-      size += extra + line.length;
-    }
-    if (kept.length) return kept.join("\n");
-    const chunk = sourceText.slice(0, room);
-    const end = Math.max(chunk.lastIndexOf("。"), chunk.lastIndexOf("！"), chunk.lastIndexOf("？"));
-    return (end >= Math.floor(room * 0.6) ? chunk.slice(0, end + 1) : chunk).trimEnd();
-  }
-  function buildDescription(description, source) {
-    const text = String(description || "").trim();
-    const url = sourceURL(source);
-    if (!url || text.includes(url)) return text.slice(0, DESCRIPTION_LIMIT);
-    const suffix = citationSuffix(source);
-    const body = clipBody(text, DESCRIPTION_LIMIT - suffix.length);
-    if (!body) return `引用来源：${url}`;
-    const combined = `${body}${suffix}`;
-    return combined.length <= DESCRIPTION_LIMIT ? combined : combined.slice(0, DESCRIPTION_LIMIT);
-  }
+  // Shared with the panel and the background worker; see descriptionLimit.js.
+  const { buildDescription, clipDescriptionBody: clipBody, descriptionRoom: descriptionBudget } = globalThis.ZhihuDescriptionLimit;
   function setTitle(input, value) {
     const previous = input.value.trim();
     if (previous) return previous === value.trim();

@@ -4,6 +4,9 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = await readFile(new URL("../extension/zhihuComposer.js", import.meta.url), "utf8");
+// Loaded before the composer, matching the manifest's content-script order.
+const sharedLimit = await readFile(new URL("../extension/descriptionLimit.js", import.meta.url), "utf8");
+const sharedDom = await readFile(new URL("../extension/zhihuDom.js", import.meta.url), "utf8");
 function fixture({ titleValue = "", editorValue = "", open = false, acceptsPaste = true, nativeInsert = false, media = false } = {}) {
   const events = [];
   class Textarea {
@@ -44,6 +47,9 @@ function fixture({ titleValue = "", editorValue = "", open = false, acceptsPaste
       },
     },
   };
+  context.globalThis = context;
+  vm.runInNewContext(sharedLimit, context);
+  vm.runInNewContext(sharedDom, context);
   vm.runInNewContext(source, context);
   return { bridge: context.ZhihuQuestionComposer, title, editor, events, clicks: () => clicks, context };
 }

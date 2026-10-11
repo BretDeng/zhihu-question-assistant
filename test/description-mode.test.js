@@ -6,13 +6,14 @@ import * as preferences from "../extension/draftPreferences.js";
 import { generateQuestions, buildMessages } from "../extension/modelClient.js";
 
 const item = { question: "如何评价这些事实？", description: "模型概括", keywords: ["科技", "经济", "社会", "历史", "文化"] };
-test("original paragraphs preserve wording and repeats, compact blank lines and reject silent truncation", () => {
+test("original paragraphs preserve wording and repeats, and compact blank lines", () => {
   const original = ' 原文ABC2026与“原文引号”。\r\n\r\n 第二段。\n\n第二段。 ';
   assert.equal(preferences.originalDescription(original), '原文ABC2026与“原文引号”。\n第二段。\n第二段。');
   const long = `${"正文".repeat(10000)}末尾不能丢失`;
   assert.equal(preferences.originalDescription(long), long);
   assert.throws(() => preferences.originalDescription(""), /未抓取/);
-  assert.throws(() => preferences.originalDescription("文".repeat(preferences.MAX_ORIGINAL_LENGTH + 1)), /未被截断/);
+  // Bounded rather than rejected: the draft is clipped for Zhihu regardless.
+  assert.equal(preferences.originalDescription("文".repeat(preferences.MAX_ORIGINAL_LENGTH + 1)).length, preferences.MAX_ORIGINAL_LENGTH);
 });
 test("preferences default to summary and decoration doesn't change titles or topics", async () => {
   assert.equal(await preferences.readDescriptionMode({ storage: { local: { get: async () => ({}) } } }), "summary");
@@ -82,13 +83,16 @@ test("background captures original mode for the whole stream and hands off a des
   assert.equal(stored.descriptionClipped, true);
   assert.ok(stored.description.length + suffix.length <= preferences.ZHIHU_DESCRIPTION_LIMIT);
 });
-test("oversized original fails before a billable request or tab creation", async () => {
+test("an oversized original still generates and is stored within Zhihu's limit", async () => {
+  const item = { question: "标题？", description: "", keywords: ["a"] };
   let called = false;
-  const bg = background({ generate: async () => { called = true; } });
+  const bg = background({ generate: async () => { called = true; return { items: [item] }; } });
   const reply = await bg.send({ type: "GENERATE_ZHIHU_QUESTIONS", payload: { mainText: "文".repeat(preferences.MAX_ORIGINAL_LENGTH + 1) } });
-  assert.equal(reply.ok, false); assert.match(reply.error, /超过/); assert.equal(called, false);
+  assert.equal(reply.ok, true); assert.equal(called, true);
+  assert.equal(reply.data.items[0].descriptionClipped, true);
   const opened = await bg.send({ type: "OPEN_ZHIHU_DRAFT", payload: { question: "问题", descriptionMode: "original", description: "文".repeat(preferences.MAX_ORIGINAL_LENGTH + 1) } });
-  assert.equal(opened.ok, false); assert.equal(Object.keys(bg.stored).length, 0);
+  assert.equal(opened.ok, true);
+  assert.equal(bg.stored["zhihuDraft:7"].description.length, preferences.ZHIHU_DESCRIPTION_LIMIT);
 });
 test("partial original generates and hands off loaded paragraphs without adding warning copy", async () => {
   let called = false;

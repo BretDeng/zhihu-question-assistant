@@ -36,7 +36,10 @@
       window.removeEventListener("popstate", check);
       window.removeEventListener("pagehide", stop);
     }
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    // Child-list changes detect the new question page. Dropping characterData
+    // avoids a callback for every text tweak in the feed;
+    // the 1s interval still covers an in-place title rewrite.
+    observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("click", rememberTitle, true);
     document.addEventListener("submit", rememberTitle, true);
     window.addEventListener("popstate", check);
