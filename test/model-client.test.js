@@ -77,6 +77,37 @@ test("imperfect model output is repaired instead of failing the whole batch", ()
   assert.deepEqual(streamed, parsed.items.map((item, index) => [index, item.question]));
 });
 
+test("the JSON-only rule stays at the end of the prompt for every style and provider", () => {
+  const ending = /items 必须恰好 6 项。\s*$/;
+  for (const provider of ["openai", "zhida"]) for (const selected of ["professional", "daily", "custom"]) {
+    const config = { provider, model: provider === "zhida" ? "zhida-agent" : "gpt-4o-mini", questionStyle: { selected, customName: "亲子", customPrompt: "从家长角度提问。" } };
+    const messages = buildMessages(page, config);
+    // Zhida-agent gets one user message; OpenAI keeps the rule in the system message.
+    const instruction = provider === "zhida" ? messages.at(-1).content : messages[0].content;
+    assert.match(instruction, ending, `${provider}/${selected} must end with the output rule`);
+    assert.match(instruction, /提问风格：/);
+  }
+  const original = buildMessages(page, { provider: "openai", model: "m", descriptionMode: "original", questionStyle: { selected: "daily" } });
+  assert.match(original.at(-1).content, /"description":""/);
+  assert.match(original[0].content, /description 固定为空字符串/);
+});
+
+test("prose around the JSON answer never truncates the object", () => {
+  const payload = JSON.stringify(result);
+  const array = JSON.stringify(result.items);
+  const cases = {
+    "braces in the trailing explanation": `${payload}\n说明：结构为 {question, description, keywords}。`,
+    "prose on both sides": `好的：\n${payload}\n如需调整请告诉我 {谢谢}`,
+    "a second fenced block": `\`\`\`json\n${payload}\n\`\`\`\n补充：\n\`\`\`json\n{"note":"x"}\n\`\`\``,
+    "an unterminated think block": `<think>还在想${payload}`,
+    "a bare array with prose": `结果如下 [示例]：\n${array}\n完毕 {ok}`,
+  };
+  for (const [name, text] of Object.entries(cases)) assert.equal(parseQuestionSet(text).items.length, 6, name);
+  const escaped = parseQuestionSet(`${JSON.stringify({ items: [{ question: '他说"你好"吗？', description: "含 } 和 { 符号", keywords: ["语言"] }] })}\n完毕 {end}`);
+  assert.equal(escaped.items[0].description, "含 } 和 { 符号");
+  assert.throws(() => parseQuestionSet("抱歉，我无法完成。"), /有效 JSON/);
+});
+
 test("full endpoint URLs are normalized and provider errors are shown without key-like tokens", async () => {
   assert.equal(resolveConfig({ apiKey: "k", baseURL: "https://openrouter.ai/api/v1/chat/completions/" }).baseURL, "https://openrouter.ai/api/v1");
   const reply = async () => new Response(JSON.stringify({ error: { message: "Incorrect API key provided: sk-abcdefghijklmnopqrstuvwxyz0123" } }), { status: 401 });
