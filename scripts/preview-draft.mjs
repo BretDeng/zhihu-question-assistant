@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 
 // Serve only public UI fixtures and allowlisted extension files, never keys.
 const routes = new Map([
+  ["/faq.js", ["../extension/faq.js", "text/javascript"]],
+  ["/questionStyles.js", ["../extension/questionStyles.js", "text/javascript"]],
+  ["/extension/questionStyles.js", ["../extension/questionStyles.js", "text/javascript"]],
   ["/", ["../test/fixtures/zhihu-draft.html", "text/html"]],
   ["/zhihu-draft-fixture.js", ["../test/fixtures/zhihu-draft-fixture.js", "text/javascript"]],
   ["/extension/zhihuComposer.js", ["../extension/zhihuComposer.js", "text/javascript"]],

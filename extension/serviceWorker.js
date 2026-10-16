@@ -1,4 +1,5 @@
 import { generateQuestions } from "./modelClient.js";
+import { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle } from "./questionStyles.js";
 import { activeModelConfig } from "./modelProfiles.js";
 import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription, fitDescriptionBody } from "./draftPreferences.js";
@@ -45,6 +46,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch(() => sendResponse({ ok: false }));
     return true;
   }
+  if (message?.type === "GET_QUESTION_STYLE") {
+    readQuestionStyle(chrome).then(style => sendResponse({ ok: true, data: publicQuestionStyle(style) }))
+      .catch(() => sendResponse({ ok: false, error: "读取提问风格失败。" }));
+    return true;
+  }
+  if (message?.type === "SET_QUESTION_STYLE") {
+    selectQuestionStyle(chrome, message.selected).then(data => sendResponse({ ok: true, data }))
+      .catch(error => sendResponse({ ok: false, error: error.message || "保存提问风格失败。" }));
+    return true;
+  }
+  if (message?.type === "SAVE_CUSTOM_QUESTION_STYLE") {
+    saveCustomStyle(chrome, message.name, message.prompt).then(data => sendResponse({ ok: true, data: publicQuestionStyle(data) }))
+      .catch(error => sendResponse({ ok: false, error: error.message || "保存自定义风格失败。" }));
+    return true;
+  }
   if (message?.type === "GET_SITE_ACCESS") {
     if (!_sender.url || !_sender.tab) return;
     siteEnabled(_sender.url).then(enabled => sendResponse({ ok: true, data: { enabled } }))
@@ -63,7 +79,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "OPEN_MODEL_SETTINGS") {
-    chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard") }).then(() => sendResponse({ ok: true }))
+    chrome.tabs.create({ url: chrome.runtime.getURL(`popup.html?view=dashboard${message.section === "questionStyle" ? "#questionStyle" : ""}`) }).then(() => sendResponse({ ok: true }))
       .catch(() => sendResponse({ ok: false, error: "无法打开模型面板。" }));
     return true;
   }
@@ -104,6 +120,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const types = [
     changes[SITE_RULES_KEY] && "SITE_RULES_CHANGED",
     changes[DESCRIPTION_MODE_KEY] && "DESCRIPTION_MODE_CHANGED",
+    changes.questionStylePreferences && "QUESTION_STYLE_CHANGED",
     (changes.modelProfiles || changes.modelProfileKeys) && "MODEL_CHANGED",
   ].filter(Boolean);
   if (!types.length) return;
@@ -168,6 +185,7 @@ async function requestQuestions(payload, sender = {}, requestId) {
   // Read settings in the trusted background, never use a page-supplied API URL or key.
   const config = await activeModelConfig();
   const mode = await readDescriptionMode(chrome);
+  const questionStyle = await readQuestionStyle(chrome);
   const decorate = prepareDescription(mode, payload);
   // Capture the preference and original once per run. Switching the dashboard
   // during streaming must not mix two formats or overwrite edited cards.
@@ -180,12 +198,14 @@ async function requestQuestions(payload, sender = {}, requestId) {
     delivery = delivery.then(() => chrome.tabs.sendMessage(sender.tab.id, { type: "ZH_QUESTION_PROGRESS", requestId, ...data }, target)).catch(() => {});
   };
   try {
-    const result = await generateQuestions(modelPage, { ...config, descriptionMode: mode }, undefined, {
-      onItem: (item, index) => progress({ item: decorate(item), index }),
+    const decorateStyle = item => ({ ...decorate(item), questionStyle: questionStyle.selected,
+      questionStyleName: questionStyle.selected === "custom" ? questionStyle.customName : questionStyle.selected === "daily" ? "日常" : "专业" });
+    const result = await generateQuestions(modelPage, { ...config, descriptionMode: mode, questionStyle }, undefined, {
+      onItem: (item, index) => progress({ item: decorateStyle(item), index }),
       onProgress: (phase) => progress({ phase }),
     });
     await delivery;
-    return { ...result, items: result.items.map(decorate) };
+    return { ...result, items: result.items.map(decorateStyle) };
   } catch (error) {
     await delivery;
     throw error;

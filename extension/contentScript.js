@@ -59,6 +59,11 @@
         <button class="model-switch qa-secondary" type="button">选择模型</button>
         <button class="analyze-button" type="button">分析当前网页</button>
         </div>
+        <div class="style-toolbar">
+          <label>提问风格<select class="question-style-select" aria-label="提问风格" disabled><option value="professional">专业</option><option value="daily">日常</option><option value="custom">自定义（先配置）</option></select></label>
+          <button class="custom-style-button qa-quiet" type="button">自定义 ↗</button>
+        </div>
+        <p class="style-status" role="status">正在读取提问风格…</p>
         <p class="format-status" role="status">描述形式 · 概括提问</p>
         <div class="loading is-hidden" aria-live="polite">
           <span class="spinner" aria-hidden="true"></span>
@@ -88,6 +93,37 @@
   const modelSwitch = shadow.querySelector(".model-switch");
   const timingElement = shadow.querySelector(".timing-status");
   const formatStatus = shadow.querySelector(".format-status");
+  const styleSelect = shadow.querySelector(".question-style-select");
+  const styleStatus = shadow.querySelector(".style-status");
+  let styleState = { selected: "professional", hasCustom: false }, styleBusy = false, styleRevision = 0;
+  function renderStyle() {
+    styleSelect.value = styleState.selected;
+    styleSelect.querySelector('[value="custom"]').textContent = styleState.hasCustom ? `自定义 · ${styleState.customName}` : "自定义（先配置）";
+    styleStatus.textContent = "切换对下次分析生效，已有草稿保持不变。";
+  }
+  async function refreshStyle() {
+    const revision = ++styleRevision;
+    try {
+      const reply = await chrome.runtime.sendMessage({ type: "GET_QUESTION_STYLE" });
+      if (revision !== styleRevision || styleBusy) return;
+      if (!reply?.ok) throw new Error();
+      styleState = reply.data; renderStyle(); styleSelect.disabled = isAnalyzing;
+    } catch { if (revision === styleRevision) styleStatus.textContent = "风格读取失败，重新打开面板可重试。"; }
+  }
+  const openStyleSettings = () => chrome.runtime.sendMessage({ type: "OPEN_MODEL_SETTINGS", section: "questionStyle" }).catch(error => showError(friendlyError(error)));
+  shadow.querySelector(".custom-style-button").onclick = openStyleSettings;
+  styleSelect.onchange = async () => {
+    if (styleBusy || isAnalyzing) return;
+    const selected = styleSelect.value;
+    if (selected === "custom" && !styleState.hasCustom) { styleSelect.value = styleState.selected; openStyleSettings(); return; }
+    styleBusy = true; styleSelect.disabled = true; ++styleRevision;
+    try {
+      const reply = await chrome.runtime.sendMessage({ type: "SET_QUESTION_STYLE", selected });
+      if (!reply?.ok) throw new Error(reply?.error || "保存风格失败。");
+      styleState = reply.data; renderStyle();
+    } catch (error) { styleSelect.value = styleState.selected; showError(friendlyError(error)); }
+    finally { styleBusy = false; styleSelect.disabled = isAnalyzing; refreshStyle(); }
+  };
   const loadingText = loadingElement.querySelector("span:last-child");
   // A run captures its mode at start, so displayed drafts and the next run may differ.
   const formatState = { next: "summary", shown: null, partial: false };
@@ -115,6 +151,7 @@
   }
   chrome.runtime.onMessage?.addListener((message) => {
     if (message?.type === "DESCRIPTION_MODE_CHANGED") { refreshDescriptionMode(); return; }
+    if (message?.type === "QUESTION_STYLE_CHANGED") { refreshStyle(); return; }
     if (message?.type === "MODEL_CHANGED") { refreshActiveModel(); return; }
     if (message?.type !== "ZH_QUESTION_PROGRESS" || message.requestId !== currentRequest?.id) return;
     if (message.item && Number.isInteger(message.index) && message.index >= 0 && message.index < 6) acceptItem(message.item, message.index);
@@ -160,6 +197,7 @@
   }).catch(() => {});
   function refreshActiveModel() {
     refreshDescriptionMode();
+    refreshStyle();
     chrome.runtime.sendMessage({ type: "GET_ACTIVE_MODEL" }).then((reply) => {
       const model = reply?.ok ? reply.data?.model : "";
       const ready = Boolean(model && reply.data.hasKey);
@@ -294,7 +332,7 @@
   document.addEventListener("selectionchange", rememberSelectedText, { passive: true });
 
   async function analyzeCurrentPage() {
-    if (isAnalyzing) return;
+    if (isAnalyzing || styleBusy) return;
 
     setLoading(true);
     const started = performance.now();
@@ -381,6 +419,7 @@
       const number = document.createElement("span");
       number.className = "number";
       number.textContent = `问题 ${String(index + 1).padStart(2, "0")}${item.descriptionMode === "original" ? " · 网页原文" : ""}${item.originalPartial ? " · 已加载部分" : ""}${item.descriptionClipped ? " · 含引用已截取至 3000 字" : ""}`;
+      if (item.questionStyleName) number.textContent += ` · ${item.questionStyleName}`;
 
       heading.append(number);
 
@@ -440,6 +479,7 @@
   function setLoading(loading) {
     isAnalyzing = loading;
     analyzeButton.disabled = loading;
+    styleSelect.disabled = loading || styleBusy;
     analyzeButton.textContent = loading ? "分析中…" : "分析当前网页";
     loadingElement.classList.toggle("is-hidden", !loading);
   }
@@ -471,6 +511,10 @@
       .eyebrow{margin:0 0 2px;color:var(--qa-muted);font-size:9px;font-weight:600;letter-spacing:.12em}h1{margin:0;font-size:18px;letter-spacing:-.03em;line-height:1.4}
       .panel-body{min-height:0;overflow:auto;padding:12px}
       .panel-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
+      .style-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
+      .style-toolbar label{display:flex;align-items:center;gap:8px;min-width:0;font-size:11px;color:var(--qa-muted)}
+      .question-style-select{min-width:0;max-width:190px;font-size:11px;padding:6px 9px}.custom-style-button{font-size:11px;white-space:nowrap}
+      .style-status{font-size:10px;color:var(--qa-muted);margin:6px 2px 0}
       .model-switch{min-width:0;margin:0;text-align:left;font-size:11px;color:var(--qa-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px 10px}
       .model-switch.needs-setup{color:#5140a9;border-color:#bcb3ff;background:var(--qa-soft)}
       .header-actions{display:flex;gap:2px}

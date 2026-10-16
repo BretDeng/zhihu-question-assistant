@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { test } from "node:test";
 import * as draftPreferences from "../extension/draftPreferences.js";
+import * as styles from "../extension/questionStyles.js";
 
 test("drafts are tab-bound, omit credentials, and are removed when the tab closes", async () => {
   const stored = {};
@@ -66,7 +67,7 @@ test("generation reads trusted saved settings instead of page-provided configura
   };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
   vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), {
-    ...draftPreferences,
+    ...draftPreferences, ...styles,
     chrome,
     setInterval: () => 42,
     clearInterval: (id) => { timerCleared = id === 42; },
@@ -98,7 +99,7 @@ test("generation progress targets the initiating document and finishes delivery 
     onRemoved: { addListener() {} }, async sendMessage(id, message, options) { delivered.push({ id, message, options }); }
   } };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
-  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, chrome, setInterval: () => 1, clearInterval() {},
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, ...styles, chrome, setInterval: () => 1, clearInterval() {},
     activeModelConfig: async () => ({ apiKey: "private" }),
     generateQuestions: async (_page, _config, _fetch, callbacks) => { callbacks.onProgress("connected"); callbacks.onItem({ question: "问题", description: "描述", keywords: [] }, 0); return { items: [] }; }
   });

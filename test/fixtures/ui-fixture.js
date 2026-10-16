@@ -13,9 +13,9 @@ const progressListeners = [];
 const storageListeners = [];
 const notifyStorage = event => {
   if (event.key !== "ui-test-local") return;
-  progressListeners.forEach(listener => { listener({ type: "SITE_RULES_CHANGED" }); listener({ type: "DESCRIPTION_MODE_CHANGED" }); });
+  progressListeners.forEach(listener => { listener({ type: "SITE_RULES_CHANGED" }); listener({ type: "DESCRIPTION_MODE_CHANGED" }); listener({ type: "QUESTION_STYLE_CHANGED" }); });
   const before = JSON.parse(event.oldValue || "{}"), after = JSON.parse(event.newValue || "{}");
-  storageListeners.forEach(listener => listener({ descriptionMode: { oldValue: before.descriptionMode, newValue: after.descriptionMode } }, "local"));
+  storageListeners.forEach(listener => listener({ descriptionMode: { oldValue: before.descriptionMode, newValue: after.descriptionMode }, questionStylePreferences: { newValue: after.questionStylePreferences } }, "local"));
 };
 window.addEventListener("storage", notifyStorage);
 if (new URL(location.href).searchParams.has("long")) {
@@ -25,6 +25,19 @@ if (new URL(location.href).searchParams.has("long")) {
 }
 globalThis.chrome = { tabs: { async create({ url }) { location.href = url; return { id: 1 }; } }, storage: { onChanged: { addListener(listener) { storageListeners.push(listener); } }, local: area("ui-test-local", initial), session: area("ui-test-session", { modelProfileKeys: { custom: "fixture-key-not-real" } }) }, permissions: { async request() { return true; } }, runtime: { onMessage: { addListener(listener) { progressListeners.push(listener); } }, getURL() { return "/models?view=dashboard"; }, async sendMessage(message) {
   if (message.type === "GET_ACTIVE_MODEL") return { ok: true, data: { model: "zhida-agent", provider: "zhida" } };
+  else if (["GET_QUESTION_STYLE", "SET_QUESTION_STYLE", "SAVE_CUSTOM_QUESTION_STYLE"].includes(message.type)) {
+    const { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle } = await import("/questionStyles.js");
+    try {
+      if (message.type === "SET_QUESTION_STYLE") await selectQuestionStyle(chrome, message.selected);
+      if (message.type === "SAVE_CUSTOM_QUESTION_STYLE") await saveCustomStyle(chrome, message.name, message.prompt);
+      const current = await readQuestionStyle(chrome);
+      if (message.type !== "GET_QUESTION_STYLE") {
+        storageListeners.forEach(listener => listener({ questionStylePreferences: { newValue: current } }, "local"));
+        progressListeners.forEach(listener => listener({ type: "QUESTION_STYLE_CHANGED" }));
+      }
+      return { ok: true, data: publicQuestionStyle(current) };
+    } catch (error) { return { ok: false, error: error.message }; }
+  }
   else if (message.type === "GET_DESCRIPTION_MODE") {
     const { readDescriptionMode } = await import("/draftPreferences.js");
     return { ok: true, data: { mode: await readDescriptionMode(chrome) } };
@@ -47,5 +60,5 @@ globalThis.chrome = { tabs: { async create({ url }) { location.href = url; retur
     return { ok: true, data: { items } };
   }
   else if (message.type === "OPEN_ZHIHU_DRAFT") { document.querySelector("main").dataset.openedDraft = JSON.stringify(message.payload); localStorage.setItem("ui-test-draft", JSON.stringify(message.payload)); return { ok: true }; }
-  else if (message.type === "OPEN_MODEL_SETTINGS") location.href = "/models";
+  else if (message.type === "OPEN_MODEL_SETTINGS") location.href = `/models?view=dashboard${message.section === "questionStyle" ? "#questionStyle" : ""}`;
 } } };

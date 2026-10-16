@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import * as preferences from "../extension/draftPreferences.js";
+import * as styles from "../extension/questionStyles.js";
 import { generateQuestions, buildMessages } from "../extension/modelClient.js";
 
 const item = { question: "如何评价这些事实？", description: "模型概括", keywords: ["科技", "经济", "社会", "历史", "文化"] };
@@ -52,7 +53,7 @@ function background({ mode = "original", generate } = {}) {
     },
     tabs: { onRemoved: { addListener() {} }, sendMessage: async (_tab, value) => delivered.push(value), create: async () => ({ id: 7 }), update: async () => {} },
   };
-  vm.runInNewContext(worker, { ...preferences, chrome, URL, Date, Error, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }), generateQuestions: generate });
+  vm.runInNewContext(worker, { ...preferences, ...styles, chrome, URL, Date, Error, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }), generateQuestions: generate });
   return { send: message => new Promise(resolve => listener(message, { tab: { id: 7 } }, resolve)), delivered, stored, switchMode: value => { mode = value; } };
 }
 test("background captures original mode for the whole stream and hands off a description that fits with its citation", async () => {

@@ -10,6 +10,7 @@ const name = `ZhihuQuestionAssistant-Extension-${manifest.version}.zip`;
 await mkdir(path.join(root, "dist"), { recursive: true });
 const destination = path.join(root, "dist", name);
 const files = ["manifest.json", "modelClient.js", "modelProfiles.js", "uiTheme.js", "draftPreferences.js", "descriptionLimit.js", "pageText.js", "siteRules.js", "siteAccess.js", "draggable.js", "serviceWorker.js", "popup.html", "popup.js", "styles.css", "guide.html", "guide.js", "guide.css", "faq.js", "contentScript.js", "zhihuDom.js", "zhihuComposer.js", "zhihuTopics.js", "zhihuDraftLifecycle.js", "zhihuDraft.js"];
+files.push("questionStyles.js");
 // The packaged extension must contain every file it loads: manifest entries,
 // page <script>/<link> tags, and the ES module import graph behind them.
 const read = (name) => readFile(path.join(root, "extension", name), "utf8");

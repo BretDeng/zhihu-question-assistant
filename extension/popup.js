@@ -3,6 +3,7 @@ import { readProfiles, saveProfile, selectProfile, removeProfile } from "./model
 import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
 import { renderFaq } from "./faq.js";
+import { QUESTION_STYLE_KEY, normalizeQuestionStyle, readQuestionStyle } from "./questionStyles.js";
 const theme = document.createElement("style");
 theme.textContent = globalThis.ZhihuUiTheme;
 document.head.append(theme);
@@ -47,10 +48,61 @@ loadSites();
 let descriptionMode = "summary";
 let modeBusy = true;
 const modeButtons = [$("#summaryModeButton"), $("#originalModeButton")];
+let styleState = normalizeQuestionStyle(), styleBusy = true;
+const styleSelect = $("#questionStyleSelect");
+$("#customStyleForm").classList.toggle("is-hidden", !fullDashboard);
+$("#editStyleButton").classList.toggle("is-hidden", fullDashboard);
+$("#editStyleButton").onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard#questionStyle") }).catch(() => styleStatus("无法打开 Dashboard，请重试。", true));
+readQuestionStyle(chrome).then(style => {
+  renderQuestionStyle(style);
+  $("#customStyleName").value = style.customName;
+  $("#customStylePrompt").value = style.customPrompt;
+  styleBusy = false; styleSelect.disabled = false; $("#saveStyleButton").disabled = false;
+  if (fullDashboard && location.hash === "#questionStyle") $("#questionStyle").scrollIntoView();
+}).catch(() => styleStatus("读取风格失败，请重新打开面板。", true));
+styleSelect.onchange = async () => {
+  if (styleBusy) return;
+  const selected = styleSelect.value;
+  if (selected === "custom" && !styleState.customPrompt) {
+    styleSelect.value = styleState.selected;
+    if (fullDashboard) { $("#customStylePrompt").focus(); styleStatus("先填写并保存下面的自定义风格。", true); }
+    else $("#editStyleButton").click();
+    return;
+  }
+  styleBusy = true; styleSelect.disabled = true; $("#saveStyleButton").disabled = true;
+  try {
+    const reply = await chrome.runtime.sendMessage({ type: "SET_QUESTION_STYLE", selected });
+    if (!reply?.ok) throw new Error(reply?.error || "保存失败，请重试。");
+    renderQuestionStyle(await readQuestionStyle(chrome)); styleStatus("已保存，下次分析使用此风格。已有草稿保持不变。");
+  }
+  catch (error) { styleSelect.value = styleState.selected; styleStatus(error.message || "保存失败，请重试。", true); }
+  finally { styleBusy = false; styleSelect.disabled = false; $("#saveStyleButton").disabled = false; }
+};
+$("#customStyleForm").onsubmit = async event => {
+  event.preventDefault();
+  if (styleBusy) return;
+  styleBusy = true; styleSelect.disabled = true; $("#saveStyleButton").disabled = true;
+  try {
+    const reply = await chrome.runtime.sendMessage({ type: "SAVE_CUSTOM_QUESTION_STYLE", name: $("#customStyleName").value, prompt: $("#customStylePrompt").value });
+    if (!reply?.ok) throw new Error(reply?.error || "保存失败，请重试。");
+    renderQuestionStyle(await readQuestionStyle(chrome));
+    styleStatus("自定义风格已保存并启用，下次分析生效。");
+  } catch (error) { styleStatus(error.message || "保存失败，请重试。", true); }
+  finally { styleBusy = false; styleSelect.disabled = false; $("#saveStyleButton").disabled = false; }
+};
+function renderQuestionStyle(style) {
+  styleState = normalizeQuestionStyle(style);
+  styleSelect.value = styleState.selected;
+  styleSelect.querySelector('[value="custom"]').textContent = `自定义 · ${styleState.customName}`;
+  $("#questionStyleHint").textContent = styleState.selected === "daily" ? "从普通人的生活体验、工作、消费和实际选择出发，用更自然、好懂的话提问。"
+    : styleState.selected === "custom" ? `使用「${styleState.customName}」的角度与表达偏好。` : "关注原因、机制、证据与行业影响，表达准确、清晰。";
+}
+function styleStatus(message, error = false) { $("#questionStyleStatus").textContent = message; $("#questionStyleStatus").classList.toggle("is-error", error); }
 loadDescriptionMode();
 modeButtons.forEach((button, index) => { button.onclick = () => saveDescriptionMode(index ? "original" : "summary"); });
 chrome.storage.onChanged?.addListener((changes, area) => {
   if (area === "local" && changes[DESCRIPTION_MODE_KEY]) renderDescriptionMode(normalizeDescriptionMode(changes[DESCRIPTION_MODE_KEY].newValue));
+  if (area === "local" && changes[QUESTION_STYLE_KEY]) renderQuestionStyle(changes[QUESTION_STYLE_KEY].newValue);
   // Keep the popup and the dashboard in sync when the other one saves.
   if (changes.modelProfiles || changes.modelProfileKeys) load();
 });

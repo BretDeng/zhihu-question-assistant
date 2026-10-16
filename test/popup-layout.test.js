@@ -11,7 +11,7 @@ test("popup roots establish width independently of Chrome's initial viewport", a
 test("model settings launched from the webpage use the full dashboard route", async () => {
   const worker = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
   const popup = await readFile(new URL("../extension/popup.js", import.meta.url), "utf8");
-  assert.match(worker, /getURL\("popup\.html\?view=dashboard"\)/);
+  assert.match(worker, /getURL\(`popup\.html\?view=dashboard\$\{/);
   assert.match(popup, /getURL\("popup\.html\?view=dashboard"\)/);
   assert.match(popup, /classList\.toggle\("is-dashboard", fullDashboard\)/);
 });
