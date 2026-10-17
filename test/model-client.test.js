@@ -78,7 +78,7 @@ test("imperfect model output is repaired instead of failing the whole batch", ()
 });
 
 test("the JSON-only rule stays at the end of the prompt for every style and provider", () => {
-  const ending = /items 必须恰好 6 项。\s*$/;
+  const ending = /不要用致歉或说明文字作答。\s*$/;
   for (const provider of ["openai", "zhida"]) for (const selected of ["professional", "daily", "custom"]) {
     const config = { provider, model: provider === "zhida" ? "zhida-agent" : "gpt-4o-mini", questionStyle: { selected, customName: "亲子", customPrompt: "从家长角度提问。" } };
     const messages = buildMessages(page, config);
@@ -105,7 +105,20 @@ test("prose around the JSON answer never truncates the object", () => {
   for (const [name, text] of Object.entries(cases)) assert.equal(parseQuestionSet(text).items.length, 6, name);
   const escaped = parseQuestionSet(`${JSON.stringify({ items: [{ question: '他说"你好"吗？', description: "含 } 和 { 符号", keywords: ["语言"] }] })}\n完毕 {end}`);
   assert.equal(escaped.items[0].description, "含 } 和 { 符号");
-  assert.throws(() => parseQuestionSet("抱歉，我无法完成。"), /有效 JSON/);
+  assert.throws(() => parseQuestionSet("模型输出了散乱文本但没有结构。"), /有效 JSON/);
+  // A refusal is reported as such, so the user can act instead of blindly retrying.
+  assert.throws(() => parseQuestionSet("抱歉，我无法完成。"), /没有按要求生成草稿/);
+});
+
+test("short paywalled bodies still ask for drafts and refusals are reported plainly", () => {
+  const lead = { title: "某官员被查", url: "https://wenews.caixin.com/2026-10-15/102493639.html", mainText: "重庆原市长在退休十年后官宣落马。\n他的经历久经风雨。" };
+  const brief = buildMessages(lead, { provider: "zhida", model: "zhida-agent", questionStyle: { selected: "professional" } })[0].content;
+  assert.match(brief, /可用正文较短/);
+  assert.match(brief, /不要因信息有限而拒绝/);
+  const full = buildMessages({ ...lead, mainText: "正文内容。".repeat(200) }, { provider: "openai", model: "m", questionStyle: { selected: "daily" } });
+  assert.doesNotMatch(full[1].content, /可用正文较短/);
+  assert.throws(() => parseQuestionSet("抱歉，该内容涉及付费墙，我无法阅读全文。"), /没有按要求生成草稿/);
+  assert.throws(() => parseQuestionSet("Sorry, I cannot help with that."), /没有按要求生成草稿/);
 });
 
 test("full endpoint URLs are normalized and provider errors are shown without key-like tokens", async () => {
