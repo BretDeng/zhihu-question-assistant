@@ -7,7 +7,9 @@ export const normalizeDescriptionMode = value => value === "original" ? "origina
 // Clipping lives in descriptionLimit.js so the panel, this worker and the
 // Zhihu editor cannot drift apart. Re-exported here for the module consumers.
 export const { ZHIHU_DESCRIPTION_LIMIT, normalizeSourceUrl, citationSuffix,
-  descriptionRoom, clipDescriptionBody, fitDescriptionBody } = globalThis.ZhihuDescriptionLimit;
+  descriptionRoom, clipDescriptionBody, fitDescriptionBody, finishQuestion } = globalThis.ZhihuDescriptionLimit;
+export const ATTACH_IMAGES_KEY = "attachImages";
+export const MAX_DRAFT_IMAGES = 6;
 
 export async function readDescriptionMode(chromeApi) {
   const stored = await chromeApi.storage.local.get(DESCRIPTION_MODE_KEY);

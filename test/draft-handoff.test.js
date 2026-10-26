@@ -31,8 +31,8 @@ test("drafts are tab-bound, omit credentials, and are removed when the tab close
   await send({ type: "OPEN_ZHIHU_DRAFT", payload: { question: "Second?", keywords: [], sourceUrl: "javascript:alert(1)" } });
   const first = await send({ type: "GET_ZHIHU_DRAFT" }, { tab: { id: 10 }, url: "https://www.zhihu.com/" });
   const second = await send({ type: "GET_ZHIHU_DRAFT" }, { tab: { id: 11 }, url: "https://www.zhihu.com/" });
-  assert.equal(first.data.question, "First?");
-  assert.equal(second.data.question, "Second?");
+  assert.equal(first.data.question, "First？");
+  assert.equal(second.data.question, "Second？");
   assert.equal(first.data.apiKey, undefined);
   assert.equal(first.data.sourceUrl, "https://example.com/article");
   assert.equal(second.data.sourceUrl, "");

@@ -1,4 +1,6 @@
 import { normalizeQuestionStyle, questionStylePrompt } from "./questionStyles.js";
+import "./descriptionLimit.js";
+const { finishQuestion } = globalThis.ZhihuDescriptionLimit;
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 export const ZHIDA_BASE_URL = "https://developer.zhihu.com/v1";
 export const ZHIDA_MODELS = ["zhida-agent", "zhida-fast-1p5", "zhida-thinking-1p5"];
@@ -200,9 +202,10 @@ function normalizeQuestion(item) {
   const keywords = Array.isArray(item.keywords)
     ? [...new Set(item.keywords.filter((x) => typeof x === "string").map((x) => normalize(x.replace(/^\s*#+/, "")).slice(0, 100)).filter(Boolean))].slice(0, 5)
     : [];
-  if (!keywords.length) return null;
+  const question = finishQuestion(normalize(item.question).slice(0, 499));
+  if (!keywords.length || !question) return null;
   return {
-    question: normalize(item.question).slice(0, 500),
+    question,
     description: typeof item.description === "string" ? normalize(item.description).slice(0, 3000) : "",
     keywords,
   };

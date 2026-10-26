@@ -58,38 +58,69 @@ globalThis.ZhihuPageText = (() => {
       const links = [...element.querySelectorAll("a")].reduce((sum, link) => sum + block(link).length, 0);
       // Reject navigation/index pages; links inside genuine prose are retained.
       if (links > value.length * 0.5 || (generic && (prose < 120 || prose < value.length * 0.5))) return null;
-      return { text: value, score: prose + Math.min(value.length, 500) - links };
+      return { text: value, element, score: prose + Math.min(value.length, 500) - links };
     }
     function best(elements, generic = false) {
-      return [...new Set(elements)].slice(0, 250).map(element => candidate(element, generic)).filter(Boolean).sort((a, b) => b.score - a.score)[0]?.text || "";
+      return [...new Set(elements)].slice(0, 250).map(element => candidate(element, generic)).filter(Boolean).sort((a, b) => b.score - a.score)[0] || null;
     }
     function rendered(element) {
       for (let node = element; node; node = node.parentElement) if (!visible(node)) return false;
       return true;
     }
-    return { block, best, rendered, caixin, paywallGate };
+    return { block, best, rendered, allowed, caixin, paywallGate };
+  }
+
+  const MAX_IMAGES = 6;
+  // Article figures only: same container as the extracted text, visible, large
+  // enough to be content rather than icons, avatars, logos or tracking pixels.
+  function articleImages(read, containers, doc) {
+    const base = doc.baseURI || doc.location?.href;
+    const seen = new Set();
+    const images = [];
+    for (const img of containers.filter(Boolean).flatMap(container => [...container.querySelectorAll("img")])) {
+      if (images.length >= MAX_IMAGES) break;
+      if (!read.allowed(img) || !read.rendered(img)) continue;
+      // Loaded images are checked here; lazy ones are verified after download.
+      const width = img.naturalWidth || Number(img.getAttribute("width")) || 0;
+      const height = img.naturalHeight || Number(img.getAttribute("height")) || 0;
+      if (width && height && (width < 200 || height < 120)) continue;
+      const raw = img.currentSrc || img.getAttribute("data-src") || img.getAttribute("data-original") || img.getAttribute("src") || "";
+      let url;
+      try { url = new URL(raw, base); } catch { continue; }
+      if (!/^https?:$/.test(url.protocol) || /\.svg(?:$|\?)/i.test(url.pathname) || /(?:^|[\W_])(?:logo|avatar|icon|qrcode|sprite)(?:$|[\W_])/i.test(url.pathname)) continue;
+      url.hash = "";
+      if (seen.has(url.href) || url.href.length > 2048) continue;
+      seen.add(url.href);
+      images.push(url.href);
+    }
+    return images;
   }
 
   function extractDetailed(doc = document) {
     const read = reader(doc);
-    let text;
+    let found;
     if (read.caixin) {
       // Actual article container, not the header's AI prompt.
-      text = read.best(doc.querySelectorAll("#Main_Content_Val"));
+      found = read.best(doc.querySelectorAll("#Main_Content_Val"));
     } else {
-      text = read.best(doc.querySelectorAll(BODY_SELECTORS)) || read.best(doc.querySelectorAll("article")) || read.best(doc.querySelectorAll("main,[role='main']"), true);
-      if (!text) {
+      found = read.best(doc.querySelectorAll(BODY_SELECTORS)) || read.best(doc.querySelectorAll("article")) || read.best(doc.querySelectorAll("main,[role='main']"), true);
+      if (!found) {
         // Limited prose-container fallback, never the entire page/body shell.
         const parents = [...doc.querySelectorAll("p")].filter(p => read.block(p).length >= 80).flatMap(p => [p.parentElement, p.parentElement?.parentElement]).filter(Boolean);
-        text = read.best(parents, true);
+        found = read.best(parents, true);
       }
     }
+    const text = found?.text || "";
     const caixinPartial = read.caixin && [...doc.querySelectorAll("#chargeWall")].some(element => read.rendered(element) && /订阅后继续阅读|订阅后阅读/.test(element.innerText || ""));
     // Ask the engine for the few paywall-named nodes instead of walking every
     // div on the page, limiting candidate traversal and innerText reads.
     const paywallPartial = Boolean(text) && [...doc.querySelectorAll("[class*='paywall' i],[id*='paywall' i]")]
       .some(element => read.paywallGate(element) && read.rendered(element) && PAYWALL_TEXT.test(element.innerText || ""));
-    return { text, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
+    let images = [];
+    // Caixin places the lead photo just above the text container.
+    const containers = read.caixin ? [...doc.querySelectorAll(".article_media_pic"), found?.element] : [found?.element];
+    try { images = articleImages(read, containers, doc); } catch { /* Images are optional. */ }
+    return { text, images, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
       !text ? "未找到可靠的文章正文，已停止复制页面菜单和其他杂项。请等待正文加载后重试，或切换为「概括提问」并选中所需内容。" : "" };
   }
   return { extract: (doc = document) => extractDetailed(doc).text, extractDetailed, extractBlock: element => reader(element.ownerDocument || document).block(element) };

@@ -1,7 +1,7 @@
 import { DEFAULT_BASE_URL, resolveConfig } from "./modelClient.js";
 import { readProfiles, saveProfile, selectProfile, removeProfile } from "./modelProfiles.js";
 import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
-import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
+import { DESCRIPTION_MODE_KEY, ATTACH_IMAGES_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
 import { renderFaq } from "./faq.js";
 import { QUESTION_STYLE_KEY, MAX_CUSTOM_STYLES, normalizeQuestionStyle, readQuestionStyle, activeCustomStyle } from "./questionStyles.js";
 const theme = document.createElement("style");
@@ -158,6 +158,26 @@ function renderStyleLibrary() {
 function styleStatus(message, error = false) { $("#questionStyleStatus").textContent = message; $("#questionStyleStatus").classList.toggle("is-error", error); }
 loadDescriptionMode();
 modeButtons.forEach((button, index) => { button.onclick = () => saveDescriptionMode(index ? "original" : "summary"); });
+const ALL_SITES = { origins: ["https://*/*"] };
+const imageInput = $("#attachImagesInput");
+async function renderImagePermission() {
+  let granted = false;
+  try { granted = await chrome.permissions.contains(ALL_SITES); } catch { /* Unknown: keep the button. */ }
+  $("#imagePermissionButton").classList.toggle("is-hidden", granted);
+  if (granted) $("#imageStatus").textContent = "已授权读取网页图片。";
+}
+chrome.storage.local.get(ATTACH_IMAGES_KEY).then(stored => { imageInput.checked = stored[ATTACH_IMAGES_KEY] !== false; imageInput.disabled = false; }).catch(() => {});
+renderImagePermission();
+imageInput.onchange = async () => {
+  try { await chrome.storage.local.set({ [ATTACH_IMAGES_KEY]: imageInput.checked }); $("#imageStatus").textContent = imageInput.checked ? "已开启，下次分析的草稿会带上原文图片。" : "已关闭，提问时不再插入图片。"; }
+  catch { $("#imageStatus").textContent = "保存失败，请重试。"; }
+};
+$("#imagePermissionButton").onclick = async () => {
+  // Must be called directly from the click to keep the user gesture.
+  const granted = await chrome.permissions.request(ALL_SITES).catch(() => false);
+  $("#imageStatus").textContent = granted ? "已授权读取网页图片。" : "未授权；允许跨站读取的网站仍可自动带图。";
+  renderImagePermission();
+};
 chrome.storage.onChanged?.addListener((changes, area) => {
   if (area === "local" && changes[DESCRIPTION_MODE_KEY]) renderDescriptionMode(normalizeDescriptionMode(changes[DESCRIPTION_MODE_KEY].newValue));
   if (area === "local" && changes[QUESTION_STYLE_KEY]) renderQuestionStyle(changes[QUESTION_STYLE_KEY].newValue);

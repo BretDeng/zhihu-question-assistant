@@ -69,6 +69,12 @@ globalThis.ZhihuDescriptionLimit ||= (() => {
     if (!body) return `${CITATION_LABEL}${url}`;
     return `${body}${suffix}`;
   }
+  // Every Zhihu question ends with exactly one full-width question mark.
+  // Trailing punctuation (?？!！。.，… etc.) is replaced rather than stacked.
+  function finishQuestion(value) {
+    const text = String(value || "").trim().replace(/[\s?？!！。.，,、;；:：…~～·]+$/u, "");
+    return text ? `${text}？` : "";
+  }
   return Object.freeze({ ZHIHU_DESCRIPTION_LIMIT, normalizeSourceUrl, citationSuffix,
-    descriptionRoom, clipDescriptionBody, fitDescriptionBody, buildDescription });
+    descriptionRoom, clipDescriptionBody, fitDescriptionBody, buildDescription, finishQuestion });
 })();

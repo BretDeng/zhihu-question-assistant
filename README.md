@@ -4,7 +4,13 @@
 
 使用自己的 **OpenAI 兼容 API Key 或知乎直答 Access Secret**，将网页或选中文本转为 6 个可编辑的提问草稿，包括标题、背景描述和话题建议；再送到知乎尝试填写与匹配真实话题，**最后由你审核发布**。
 
-当前开发版本 **v2.4.0**：自定义提问风格可以新建并保存多个（最多 20 个），随时切换、编辑和删除。
+当前开发版本 **v2.5.0**：提问时自动插入网页正文里的图片；所有问题标题统一以一个「？」结尾。
+
+## 原文图片
+
+分析网页时，扩展会从正文区域挑出最多 6 张内容图片（跳过图标、头像、Logo 和侧栏推荐）。进入知乎提问后，在填好标题和描述之后把图片逐张粘贴到描述末尾，由知乎上传到自己的图床，等同于你手动粘贴截图。草稿面板可以预览并取消勾选；Dashboard「原文图片」可整体关闭。
+
+部分网站不允许跨站读取图片，可在 Dashboard 点「授权读取网页图片」。下载图片时不发送 Cookie 和来源页面。转载图片请注意版权。
 
 纯 Chrome 扩展，无需本地服务器、Codex CLI、伴侣程序或常驻终端。macOS（Intel / Apple Silicon）、Windows、Linux 使用同一份 ZIP。API 请求直接发往所选模型供应商，并非离线运行模型。
 
@@ -57,13 +63,13 @@ Dashboard 与网页生成面板都能选择「专业」「日常」「自定义�
 - **安全停止**：关闭草稿或停用网站时，中止后续自动填写和话题绑定，不删除知乎已有内容。
 - 保留逐个显示草稿、多模型配置、引用链接、真实话题匹配与发布后清理等功能。
 
-[下载 v2.4.0 ZIP](https://github.com/BretDeng/zhihu-question-assistant/releases/download/v2.4.0/ZhihuQuestionAssistant-Extension-2.4.0.zip) · [发布说明](https://github.com/BretDeng/zhihu-question-assistant/releases/tag/v2.4.0) · [更新记录](CHANGELOG.md)
+[下载 v2.5.0 ZIP](https://github.com/BretDeng/zhihu-question-assistant/releases/download/v2.5.0/ZhihuQuestionAssistant-Extension-2.5.0.zip) · [发布说明](https://github.com/BretDeng/zhihu-question-assistant/releases/tag/v2.5.0) · [更新记录](CHANGELOG.md)
 
 ## 安装
 
 从 [GitHub 最新版本](https://github.com/BretDeng/zhihu-question-assistant/releases/latest)下载扩展 ZIP。2.x 是跨平台纯 Chrome 扩展，不再需要下载旧版 macOS / Windows 伴侣程序。
 
-1. 解压 `ZhihuQuestionAssistant-Extension-2.4.0.zip`，将文件夹放在固定位置。
+1. 解压 `ZhihuQuestionAssistant-Extension-2.5.0.zip`，将文件夹放在固定位置。
 2. 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择包含 `manifest.json` 的目录。
 4. 首次安装会自动打开新手教程；按教程配置模型，再刷新要分析的网页。
@@ -71,7 +77,7 @@ Dashboard 与网页生成面板都能选择「专业」「日常」「自定义�
 也可以直接加载源码中的 `extension` 目录。需要 Chrome 110 或更新版本。
 不需要 Node.js、npm、终端、本地 HTTP 服务或伴侣程序。macOS、Windows 和 Linux 使用同一份扩展。
 
-升级时将新文件替换到 Chrome 原来加载的目录，或重新加载新解压目录。确认扩展管理页面显示 **2.4.0**，再刷新已经打开的网页。只下载 ZIP 不会更新已安装的扩展；旧草稿需重新分析才会使用新的截取逻辑。
+升级时将新文件替换到 Chrome 原来加载的目录，或重新加载新解压目录。确认扩展管理页面显示 **2.5.0**，再刷新已经打开的网页。只下载 ZIP 不会更新已安装的扩展；旧草稿需重新分析才会使用新的截取逻辑。
 
 ## 模型设置
 

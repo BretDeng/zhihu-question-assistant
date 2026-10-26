@@ -37,6 +37,13 @@
     <p id="descriptionModeHint" class="site-help">标题 + 材料概括与讨论问题。</p>
     <p id="descriptionModeStatus" class="settings-status" role="status" aria-live="polite"></p>
   </section>
+  <section class="format-card" aria-labelledby="imageHeading">
+    <div class="section-heading"><h2 id="imageHeading">原文图片</h2><span class="site-badge">自动填写</span></div>
+    <label class="image-toggle"><input id="attachImagesInput" type="checkbox" checked disabled> 提问时自动插入网页正文里的图片（最多 6 张）</label>
+    <p class="site-help">图片由扩展下载后粘贴进知乎编辑器，再由知乎上传到自己的图床。部分网站不允许跨站读取图片，可授权扩展读取（不发送 Cookie）。请注意图片版权。</p>
+    <button id="imagePermissionButton" class="qa-secondary" type="button">授权读取网页图片</button>
+    <p id="imageStatus" class="settings-status" role="status" aria-live="polite"></p>
+  </section>
   <div class="section-heading"><h2>我的模型 <span id="profileCount">0</span></h2><button id="addProfileButton" class="qa-secondary" type="button">添加配置</button></div>
   <input id="profileSearch" class="search-input" type="search" placeholder="搜索名称、供应商或模型…" aria-label="搜索模型配置">
   <div id="profileList" class="profile-list" aria-label="保存的模型配置"></div>

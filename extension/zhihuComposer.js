@@ -36,6 +36,43 @@ globalThis.ZhihuQuestionComposer = (() => {
     signal?.throwIfAborted();
     return null;
   }
+  function findEditor(question) {
+    const currentTitle = findTitle();
+    if (currentTitle?.value.trim() !== question.trim()) return null;
+    const form = currentTitle.closest(".Ask-form");
+    return form && unique([...form.querySelectorAll(".AskDetail [contenteditable=true], .AskDetail textarea")].filter(visible));
+  }
+  function caretAtEnd(editor) {
+    editor.focus();
+    const selection = document.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  // Zhihu's rich-text editor uploads pasted image files to its own CDN, the
+  // same path as pasting a screenshot. Each file is pasted at the end, and we
+  // wait for a new <img> before the next one so order is preserved.
+  async function insertImages(question, files, { signal, onProgress } = {}) {
+    let inserted = 0;
+    for (const [index, file] of files.entries()) {
+      signal?.throwIfAborted();
+      const editor = await waitFor(() => findEditor(question), 5000, signal);
+      if (!editor || editor.tagName === "TEXTAREA") break;
+      onProgress?.(index + 1, files.length);
+      const before = editor.querySelectorAll("img").length;
+      caretAtEnd(editor);
+      try {
+        const data = new DataTransfer();
+        data.items.add(file);
+        editor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+      } catch { break; }
+      if (await waitFor(() => findEditor(question)?.querySelectorAll("img").length > before, 15000, signal)) inserted++;
+      else break; // Editor ignored the paste; don't keep firing blind events.
+    }
+    return inserted;
+  }
   async function fillDraft(draft, { signal } = {}) {
     signal?.throwIfAborted();
     let title = findTitle();
@@ -53,12 +90,7 @@ globalThis.ZhihuQuestionComposer = (() => {
     if (!description) return { ok: true, message: "已填写标题。请选择真实话题，检查后自行发布。" };
     // React can replace the form after title entry. Always query the current
     // form instead of waiting on a detached DOM node captured before rendering.
-    const editor = await waitFor(() => {
-      const currentTitle = findTitle();
-      if (currentTitle?.value.trim() !== draft.question.trim()) return null;
-      const form = currentTitle.closest(".Ask-form");
-      return form && unique([...form.querySelectorAll(".AskDetail [contenteditable=true], .AskDetail textarea")].filter(visible));
-    }, 10000, signal);
+    const editor = await waitFor(() => findEditor(draft.question), 10000, signal);
     signal?.throwIfAborted();
     if (!editor) return { ok: false, message: "已填写标题，但未找到描述编辑器。请复制「问题描述及引用来源」手动粘贴。" };
     if (findTitle()?.value.trim() !== draft.question.trim()) return { ok: false, message: "提问框内容已发生变化，停止自动填写。请检查后手动补充描述。" };
@@ -101,5 +133,5 @@ globalThis.ZhihuQuestionComposer = (() => {
       ? { ok: true, message: "已填写标题、描述和引用来源。请选择真实话题，检查后自行发布。" }
       : { ok: false, message: "已填写标题；知乎未接受自动粘贴，请复制「问题描述及引用来源」手动粘贴。" };
   }
-  return Object.freeze({ fillDraft, buildDescription, descriptionBudget, clipBody, findEntry, findTitle, setTitle });
+  return Object.freeze({ fillDraft, insertImages, buildDescription, descriptionBudget, clipBody, findEntry, findTitle, setTitle });
 })();

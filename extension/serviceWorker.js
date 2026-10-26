@@ -2,7 +2,7 @@ import { generateQuestions } from "./modelClient.js";
 import { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle, deleteCustomStyle, questionStyleName } from "./questionStyles.js";
 import { activeModelConfig } from "./modelProfiles.js";
 import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
-import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription, fitDescriptionBody } from "./draftPreferences.js";
+import { DESCRIPTION_MODE_KEY, ATTACH_IMAGES_KEY, MAX_DRAFT_IMAGES, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription, fitDescriptionBody, finishQuestion } from "./draftPreferences.js";
 chrome.storage.local?.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
 const ONBOARDING_KEY = "onboardingSeen";
 const BALL_POSITION_KEY = "ballPosition";
@@ -100,6 +100,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch(() => sendResponse({ ok: false, error: "读取草稿失败" }));
     return true;
   }
+  if (message?.type === "FETCH_DRAFT_IMAGE") {
+    if (!_sender.tab?.id || !_sender.url?.startsWith("https://www.zhihu.com/")) return;
+    fetchDraftImage(_sender.tab.id, message.index).then(data => sendResponse({ ok: true, data }))
+      .catch(error => sendResponse({ ok: false, error: error.message || "图片下载失败。" }));
+    return true;
+  }
   if (message?.type !== "GENERATE_ZHIHU_QUESTIONS") {
     return undefined;
   }
@@ -147,17 +153,19 @@ async function updateDraftLifecycle(message, tabId) {
 }
 
 async function openZhihuDraft(payload) {
-  if (typeof payload?.question !== "string" || !payload.question.trim()) throw new Error("缺少标题");
+  const question = finishQuestion(typeof payload?.question === "string" ? payload.question.slice(0, 499) : "");
+  if (!question) throw new Error("缺少标题");
   const descriptionMode = normalizeDescriptionMode(payload.descriptionMode);
   const sourceUrl = safeSourceUrl(payload.sourceUrl);
   const normalized = descriptionMode === "original" ? originalDescription(payload.description) : String(payload.description || "").trim();
   const description = fitDescriptionBody(normalized, sourceUrl);
   const draft = {
-    question: payload.question.trim().slice(0, 500),
+    question,
     description, descriptionMode,
     originalPartial: descriptionMode === "original" && payload.originalPartial === true,
     descriptionClipped: payload.descriptionClipped === true || description.length < normalized.length,
     keywords: Array.isArray(payload.keywords) ? payload.keywords.filter((x) => typeof x === "string").slice(0, 5).map((x) => x.slice(0, 100)) : [],
+    images: safeImageUrls(payload.images),
     sourceUrl,
     createdAt: Date.now(),
   };
@@ -182,6 +190,47 @@ function safeSourceUrl(value) {
     return url.href;
   } catch { return ""; }
 }
+function safeImageUrls(list) {
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map(safeSourceUrl).filter(url => url.startsWith("https:") && url.length <= 2048))].slice(0, MAX_DRAFT_IMAGES);
+}
+async function readAttachImages() {
+  const stored = await chrome.storage.local.get(ATTACH_IMAGES_KEY);
+  return stored[ATTACH_IMAGES_KEY] !== false;
+}
+
+const IMAGE_TYPES = /^image\/(?:jpeg|png|gif|webp)$/;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// Only URLs stored in this tab's own draft can be fetched, so a Zhihu page
+// can't use the worker as a general-purpose proxy. No cookies or referrer
+// are sent; many image CDNs block foreign referrers but allow none.
+async function fetchDraftImage(tabId, index) {
+  const stored = await chrome.storage.session.get(`zhihuDraft:${tabId}`);
+  const url = stored[`zhihuDraft:${tabId}`]?.images?.[index];
+  if (!Number.isInteger(index) || !url) throw new Error("草稿中没有这张图片。");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", signal: controller.signal });
+    if (!response.ok) throw new Error(`图片下载失败（HTTP ${response.status}）。`);
+    const blob = await response.blob();
+    const type = blob.type.split(";")[0].trim().toLowerCase();
+    if (!IMAGE_TYPES.test(type)) throw new Error("不支持的图片格式。");
+    if (blob.size > MAX_IMAGE_BYTES) throw new Error("图片超过 10 MB。");
+    const bitmap = await createImageBitmap(blob);
+    const { width, height } = bitmap;
+    bitmap.close?.();
+    if (width < 200 || height < 120) throw new Error("图片尺寸过小，可能是图标。");
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return { base64: btoa(binary), type, width, height };
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("图片下载超时。");
+    if (error instanceof TypeError) throw new Error("图片站点拒绝读取，可在 Dashboard 授权读取网页图片。");
+    throw error;
+  } finally { clearTimeout(timer); }
+}
 
 chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`zhihuDraft:${tabId}`));
 
@@ -191,6 +240,7 @@ async function requestQuestions(payload, sender = {}, requestId) {
   const config = await activeModelConfig();
   const mode = await readDescriptionMode(chrome);
   const questionStyle = await readQuestionStyle(chrome);
+  const images = await readAttachImages() ? safeImageUrls(payload?.images) : [];
   const decorate = prepareDescription(mode, payload);
   // Capture the preference and original once per run. Switching the dashboard
   // during streaming must not mix two formats or overwrite edited cards.
@@ -204,7 +254,7 @@ async function requestQuestions(payload, sender = {}, requestId) {
   };
   try {
     const styleName = questionStyleName(questionStyle);
-    const decorateStyle = item => ({ ...decorate(item), questionStyle: questionStyle.selected, questionStyleName: styleName });
+    const decorateStyle = item => ({ ...decorate(item), questionStyle: questionStyle.selected, questionStyleName: styleName, images });
     const result = await generateQuestions(modelPage, { ...config, descriptionMode: mode, questionStyle }, undefined, {
       onItem: (item, index) => progress({ item: decorateStyle(item), index }),
       onProgress: (phase) => progress({ phase }),

@@ -28,6 +28,7 @@
       .draft-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px}h2{font-size:16px;font-weight:600;letter-spacing:-.025em;margin:0}.dismiss-draft{font-size:20px!important;line-height:1;min-width:32px;min-height:32px;margin:0!important}.intro{color:var(--qa-muted);font-size:11px;margin:0 0 16px;line-height:1.65}
       .field-group{padding:12px;background:white;border:1px solid var(--qa-line);border-radius:12px;margin-bottom:10px}.field-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}.field-heading label{font-size:10px;font-weight:600;color:var(--qa-muted)}
       textarea,input{width:100%;font-size:12px;line-height:1.7;margin:0;border:0;padding:4px 2px;background:white;border-radius:6px}textarea{min-height:92px;resize:vertical}textarea[aria-label="问题描述"]{min-height:130px}
+      .image-group label{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--qa-ink)}.image-group input{width:auto;margin:0}.image-strip{display:flex;gap:6px;margin-top:8px;overflow-x:auto}.image-strip img{width:56px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--qa-line);background:var(--qa-bg)}
       button{font-size:11px;margin:5px 5px 0 0}.field-heading button{font-size:10px;margin:0;padding:3px 6px}
       .status{color:#5140a9;background:var(--qa-soft);border:1px solid #e3dfff;border-radius:11px;padding:10px 12px;font-size:11px;line-height:1.7;margin:0 0 14px;overflow-wrap:anywhere}
     </style><section aria-label="待提问草稿"><div class="draft-header"><h2>提问草稿</h2></div><div class="details"><p class="intro">内容与话题会自动填入知乎。你只需审核后发布，已有内容不会被覆盖。</p></div></section>`;
@@ -78,6 +79,45 @@
     };
     fields.sourceUrl.addEventListener("input", syncDescriptionLimit);
     syncDescriptionLimit();
+    const images = Array.isArray(draft.images) ? draft.images : [];
+    const attachImages = document.createElement("input");
+    attachImages.type = "checkbox";
+    attachImages.checked = images.length > 0;
+    if (images.length) {
+      const group = document.createElement("div");
+      group.className = "field-group image-group";
+      const label = document.createElement("label");
+      label.append(attachImages, `插入原文图片（${images.length} 张，由知乎上传到自己的图床）`);
+      const strip = document.createElement("div");
+      strip.className = "image-strip";
+      for (const url of images) {
+        const img = document.createElement("img");
+        img.src = url; img.alt = ""; img.referrerPolicy = "no-referrer"; img.loading = "lazy";
+        img.onerror = () => img.remove();
+        strip.append(img);
+      }
+      group.append(label, strip); details.append(group);
+    }
+    async function insertImages(question, signal) {
+      const files = [];
+      let failed = 0;
+      for (const [index] of images.entries()) {
+        signal.throwIfAborted();
+        status.textContent = `正在下载原文图片 ${index + 1}/${images.length}…`;
+        try {
+          const reply = await chrome.runtime.sendMessage({ type: "FETCH_DRAFT_IMAGE", index });
+          if (!reply?.ok) throw new Error(reply?.error);
+          const bytes = Uint8Array.from(atob(reply.data.base64), c => c.charCodeAt(0));
+          const ext = reply.data.type.split("/")[1].replace("jpeg", "jpg");
+          files.push(new File([bytes], `image-${index + 1}.${ext}`, { type: reply.data.type }));
+        } catch { failed++; }
+      }
+      if (!files.length) return `原文图片未能下载，可手动上传。`;
+      const inserted = await ZhihuQuestionComposer.insertImages(question, files, { signal,
+        onProgress: (i, total) => { status.textContent = `正在插入图片 ${i}/${total}，等待知乎上传…`; } });
+      const missed = images.length - inserted;
+      return missed ? `已插入 ${inserted} 张图片，${missed} 张未插入（${failed ? "下载失败或" : ""}知乎未接受）。` : `已插入 ${inserted} 张原文图片。`;
+    }
     const fill = document.createElement("button");
     fill.textContent = "打开提问并填写";
     fill.className = "qa-primary";
@@ -107,6 +147,8 @@
     });
     fill.onclick = async () => {
       if (disposed || !siteEnabled || fill.disabled) return;
+      const finish = globalThis.ZhihuDescriptionLimit?.finishQuestion;
+      if (finish) fields.question.value = finish(fields.question.value);
       if (!fields.question.value.trim()) { status.textContent = "请先填写草稿标题。"; return; }
       fill.disabled = true;
       operation = new AbortController();
@@ -121,6 +163,13 @@
           result = { ok: false, message: "描述自动填写未完成，请检查已填内容。" };
         }
         if (signal.aborted || disposed) return;
+        let imageNote = "";
+        if (result.ok && attachImages.checked && images.length) {
+          try { imageNote = await insertImages(fields.question.value.trim(), signal); }
+          catch { if (signal.aborted || disposed) return; imageNote = "图片插入未完成，可手动上传。"; }
+          attachImages.checked = false; // Never paste the same images twice.
+          status.textContent = imageNote;
+        }
         const title = ZhihuQuestionComposer.findTitle();
         if (title) attemptedTitles.add(title);
         status.textContent = result.message;
@@ -131,7 +180,7 @@
           status.textContent = "正在通过 # 按钮搜索并绑定知乎话题…";
           try {
             const topics = await ZhihuQuestionTopics.bindTopics(fields.keywords.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean), fields.question.value.trim(), showTopicProgress, { signal });
-            status.textContent = `${result.ok ? "" : `${result.message} `}${ZhihuQuestionTopics.summary(topics)}`;
+            status.textContent = `${result.ok ? "" : `${result.message} `}${imageNote ? `${imageNote} ` : ""}${ZhihuQuestionTopics.summary(topics)}`;
           } catch { status.textContent = `${result.message} 话题绑定未完成，请检查已选话题。`; }
         }
         if (!result.ok) setCollapsed(false);

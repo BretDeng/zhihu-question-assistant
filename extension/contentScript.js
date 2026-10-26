@@ -395,6 +395,7 @@
       // Preserve the complete extracted text for local original-mode drafts.
       // The model client applies its separate 6,000-character input budget.
       mainText: article.text,
+      images: article.images || [],
       originalPartial: article.originalPartial,
       originalUnavailableReason: article.originalUnavailableReason,
     };
@@ -423,6 +424,7 @@
       number.className = "number";
       number.textContent = `问题 ${String(index + 1).padStart(2, "0")}${item.descriptionMode === "original" ? " · 网页原文" : ""}${item.originalPartial ? " · 已加载部分" : ""}${item.descriptionClipped ? " · 含引用已截取至 3000 字" : ""}`;
       if (item.questionStyleName) number.textContent += ` · ${item.questionStyleName}`;
+      if (item.images?.length) number.textContent += ` · 附 ${item.images.length} 图`;
 
       heading.append(number);
 
@@ -459,6 +461,7 @@
             originalPartial: item.originalPartial === true,
             descriptionClipped: item.descriptionClipped === true,
             sourceUrl,
+            images: item.images || [],
             keywords: topicInput.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean),
           }});
           if (!reply?.ok) throw new Error(reply?.error || "打开草稿失败");
