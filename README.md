@@ -4,17 +4,17 @@
 
 使用自己的 **OpenAI 兼容 API Key 或知乎直答 Access Secret**，将网页或选中文本转为 6 个可编辑的提问草稿，包括标题、背景描述和话题建议；再送到知乎尝试填写与匹配真实话题，**最后由你审核发布**。
 
-当前开发版本 **v2.3.2**：修复付费墙文章（如财新）正文过短时模型拒答导致的报错。
+当前开发版本 **v2.4.0**：自定义提问风格可以新建并保存多个（最多 20 个），随时切换、编辑和删除。
 
 纯 Chrome 扩展，无需本地服务器、Codex CLI、伴侣程序或常驻终端。macOS（Intel / Apple Silicon）、Windows、Linux 使用同一份 ZIP。API 请求直接发往所选模型供应商，并非离线运行模型。
 
-## v2.3.0 · 提问风格
+## 提问风格
 
 Dashboard 与网页生成面板都能选择「专业」「日常」「自定义」。风格会保存到当前浏览器；切换只影响下一次分析，不会覆盖已有草稿。
 
 - **专业**：关注原因、机制、证据、趋势与行业影响。
 - **日常**：从普通人的工作、消费、生活体验与实际选择出发，减少术语。
-- **自定义**：在 Dashboard 中填写风格名称和说明，保存后可在两处快速选用。比如「从普通上班族的视角提问，关注收入和生活选择，语言自然，少用术语」。自定义说明最多 1500 字。
+- **自定义**：在 Dashboard「我的风格」中新建、编辑、删除多个风格（最多 20 个），保存后可在 Dashboard 和网页面板的下拉菜单中快速切换。比如「从普通上班族的视角提问，关注收入和生活选择，语言自然，少用术语」。每个说明最多 1500 字；旧版保存的自定义风格会自动迁移保留。
 
 概括模式会调整标题和背景文案；网页原文模式保持原文，仅调整问题角度与话题建议。仍生成 6 个草稿，并保留事实和话题匹配规则。自定义说明会随生成请求发送给当前选择的模型供应商。
 
@@ -57,13 +57,13 @@ Dashboard 与网页生成面板都能选择「专业」「日常」「自定义�
 - **安全停止**：关闭草稿或停用网站时，中止后续自动填写和话题绑定，不删除知乎已有内容。
 - 保留逐个显示草稿、多模型配置、引用链接、真实话题匹配与发布后清理等功能。
 
-[下载 v2.3.2 ZIP](https://github.com/BretDeng/zhihu-question-assistant/releases/download/v2.3.2/ZhihuQuestionAssistant-Extension-2.3.2.zip) · [发布说明](https://github.com/BretDeng/zhihu-question-assistant/releases/tag/v2.3.2) · [更新记录](CHANGELOG.md)
+[下载 v2.4.0 ZIP](https://github.com/BretDeng/zhihu-question-assistant/releases/download/v2.4.0/ZhihuQuestionAssistant-Extension-2.4.0.zip) · [发布说明](https://github.com/BretDeng/zhihu-question-assistant/releases/tag/v2.4.0) · [更新记录](CHANGELOG.md)
 
 ## 安装
 
 从 [GitHub 最新版本](https://github.com/BretDeng/zhihu-question-assistant/releases/latest)下载扩展 ZIP。2.x 是跨平台纯 Chrome 扩展，不再需要下载旧版 macOS / Windows 伴侣程序。
 
-1. 解压 `ZhihuQuestionAssistant-Extension-2.3.2.zip`，将文件夹放在固定位置。
+1. 解压 `ZhihuQuestionAssistant-Extension-2.4.0.zip`，将文件夹放在固定位置。
 2. 打开 `chrome://extensions`，开启「开发者模式」。
 3. 点击「加载已解压的扩展程序」，选择包含 `manifest.json` 的目录。
 4. 首次安装会自动打开新手教程；按教程配置模型，再刷新要分析的网页。
@@ -71,7 +71,7 @@ Dashboard 与网页生成面板都能选择「专业」「日常」「自定义�
 也可以直接加载源码中的 `extension` 目录。需要 Chrome 110 或更新版本。
 不需要 Node.js、npm、终端、本地 HTTP 服务或伴侣程序。macOS、Windows 和 Linux 使用同一份扩展。
 
-升级时将新文件替换到 Chrome 原来加载的目录，或重新加载新解压目录。确认扩展管理页面显示 **2.3.2**，再刷新已经打开的网页。只下载 ZIP 不会更新已安装的扩展；旧草稿需重新分析才会使用新的截取逻辑。
+升级时将新文件替换到 Chrome 原来加载的目录，或重新加载新解压目录。确认扩展管理页面显示 **2.4.0**，再刷新已经打开的网页。只下载 ZIP 不会更新已安装的扩展；旧草稿需重新分析才会使用新的截取逻辑。
 
 ## 模型设置
 

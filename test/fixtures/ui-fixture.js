@@ -25,11 +25,12 @@ if (new URL(location.href).searchParams.has("long")) {
 }
 globalThis.chrome = { tabs: { async create({ url }) { location.href = url; return { id: 1 }; } }, storage: { onChanged: { addListener(listener) { storageListeners.push(listener); } }, local: area("ui-test-local", initial), session: area("ui-test-session", { modelProfileKeys: { custom: "fixture-key-not-real" } }) }, permissions: { async request() { return true; } }, runtime: { onMessage: { addListener(listener) { progressListeners.push(listener); } }, getURL() { return "/models?view=dashboard"; }, async sendMessage(message) {
   if (message.type === "GET_ACTIVE_MODEL") return { ok: true, data: { model: "zhida-agent", provider: "zhida" } };
-  else if (["GET_QUESTION_STYLE", "SET_QUESTION_STYLE", "SAVE_CUSTOM_QUESTION_STYLE"].includes(message.type)) {
-    const { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle } = await import("/questionStyles.js");
+  else if (["GET_QUESTION_STYLE", "SET_QUESTION_STYLE", "SAVE_CUSTOM_QUESTION_STYLE", "DELETE_CUSTOM_QUESTION_STYLE"].includes(message.type)) {
+    const { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle, deleteCustomStyle } = await import("/questionStyles.js");
     try {
       if (message.type === "SET_QUESTION_STYLE") await selectQuestionStyle(chrome, message.selected);
-      if (message.type === "SAVE_CUSTOM_QUESTION_STYLE") await saveCustomStyle(chrome, message.name, message.prompt);
+      if (message.type === "SAVE_CUSTOM_QUESTION_STYLE") await saveCustomStyle(chrome, message.name, message.prompt, message.id || "");
+      if (message.type === "DELETE_CUSTOM_QUESTION_STYLE") await deleteCustomStyle(chrome, message.id);
       const current = await readQuestionStyle(chrome);
       if (message.type !== "GET_QUESTION_STYLE") {
         storageListeners.forEach(listener => listener({ questionStylePreferences: { newValue: current } }, "local"));

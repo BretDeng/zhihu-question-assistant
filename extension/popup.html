@@ -12,15 +12,20 @@
   <section class="active-card"><span class="qa-label">当前使用</span><h2 id="activeName">尚未配置模型</h2><p id="activeDetail">添加你的 API，开始把网页变成好问题。</p></section>
   <section class="format-card" id="questionStyle" aria-labelledby="styleHeading">
     <div class="section-heading"><h2 id="styleHeading">提问风格</h2><span class="site-badge">生成偏好</span></div>
-    <label class="field">选择提问角度<select id="questionStyleSelect" disabled><option value="professional">专业 · 深入分析</option><option value="daily">日常 · 贴近生活</option><option value="custom">自定义 · 我的风格</option></select></label>
+    <label class="field">选择提问角度<select id="questionStyleSelect" disabled><option value="professional">专业 · 深入分析</option><option value="daily">日常 · 贴近生活</option></select></label>
     <p id="questionStyleHint" class="site-help">关注原因、机制、证据与行业影响。</p>
     <p class="site-help style-footnote">对下次分析生效，已有草稿保持不变；网页原文模式保留正文。</p>
-    <button id="editStyleButton" type="button" class="qa-quiet style-edit">编辑自定义风格 ↗</button>
-    <form id="customStyleForm" class="is-hidden">
-      <label class="field">风格名称<input id="customStyleName" maxlength="24" placeholder="例如：打工人的好奇心"></label>
-      <label class="field">风格说明<textarea id="customStylePrompt" rows="5" maxlength="1500" required placeholder="例如：从普通上班族的视角提问，关注工作、收入和生活选择。语言自然，少用术语，多问这件事会怎样影响我，以及有哪些实际做法。"></textarea><small>描述想关注的角度、语言和读者，最多 1500 字。事实、话题和输出格式规则仍然生效。</small></label>
-      <button id="saveStyleButton" class="qa-secondary" type="submit" disabled>保存并使用自定义风格</button>
-    </form>
+    <button id="editStyleButton" type="button" class="qa-quiet style-edit">管理自定义风格 ↗</button>
+    <div id="customStyleLibrary" class="style-library is-hidden">
+      <div class="section-heading style-library-heading"><h3>我的风格 <span id="customStyleCount">0</span></h3><button id="newStyleButton" class="qa-secondary" type="button" disabled>新建风格</button></div>
+      <div id="customStyleList" class="style-list" aria-label="已保存的自定义风格"></div>
+      <form id="customStyleForm" class="style-editor is-hidden">
+        <p id="customStyleFormTitle" class="style-editor-title">新建风格</p>
+        <label class="field">风格名称<input id="customStyleName" maxlength="24" placeholder="例如：打工人的好奇心"></label>
+        <label class="field">风格说明<textarea id="customStylePrompt" rows="5" maxlength="1500" required placeholder="例如：从普通上班族的视角提问，关注工作、收入和生活选择。语言自然，少用术语，多问这件事会怎样影响我，以及有哪些实际做法。"></textarea><small>描述想关注的角度、语言和读者，最多 1500 字。事实、话题和输出格式规则仍然生效。</small></label>
+        <div class="style-editor-actions"><button id="saveStyleButton" class="qa-primary" type="submit">保存并使用</button><button id="cancelStyleButton" class="qa-quiet" type="button">取消</button></div>
+      </form>
+    </div>
     <p id="questionStyleStatus" class="settings-status" role="status" aria-live="polite"></p>
   </section>
   <section class="format-card" aria-labelledby="formatHeading">

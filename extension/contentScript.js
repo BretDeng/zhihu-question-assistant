@@ -60,8 +60,8 @@
         <button class="analyze-button" type="button">分析当前网页</button>
         </div>
         <div class="style-toolbar">
-          <label>提问风格<select class="question-style-select" aria-label="提问风格" disabled><option value="professional">专业</option><option value="daily">日常</option><option value="custom">自定义（先配置）</option></select></label>
-          <button class="custom-style-button qa-quiet" type="button">自定义 ↗</button>
+          <label>提问风格<select class="question-style-select" aria-label="提问风格" disabled><option value="professional">专业</option><option value="daily">日常</option></select></label>
+          <button class="custom-style-button qa-quiet" type="button">管理风格 ↗</button>
         </div>
         <p class="style-status" role="status">正在读取提问风格…</p>
         <p class="format-status" role="status">描述形式 · 概括提问</p>
@@ -95,10 +95,13 @@
   const formatStatus = shadow.querySelector(".format-status");
   const styleSelect = shadow.querySelector(".question-style-select");
   const styleStatus = shadow.querySelector(".style-status");
-  let styleState = { selected: "professional", hasCustom: false }, styleBusy = false, styleRevision = 0;
+  let styleState = { selected: "professional", customStyles: [] }, styleBusy = false, styleRevision = 0;
   function renderStyle() {
+    const customStyles = Array.isArray(styleState.customStyles) ? styleState.customStyles : [];
+    // new Option() sets text, never HTML, so user-chosen names cannot inject markup.
+    styleSelect.replaceChildren(new Option("专业", "professional"), new Option("日常", "daily"),
+      ...customStyles.map(item => new Option(`自定义 · ${item.name}`, item.id)), new Option("＋ 新建自定义风格…", "__new"));
     styleSelect.value = styleState.selected;
-    styleSelect.querySelector('[value="custom"]').textContent = styleState.hasCustom ? `自定义 · ${styleState.customName}` : "自定义（先配置）";
     styleStatus.textContent = "切换对下次分析生效，已有草稿保持不变。";
   }
   async function refreshStyle() {
@@ -115,7 +118,7 @@
   styleSelect.onchange = async () => {
     if (styleBusy || isAnalyzing) return;
     const selected = styleSelect.value;
-    if (selected === "custom" && !styleState.hasCustom) { styleSelect.value = styleState.selected; openStyleSettings(); return; }
+    if (selected === "__new") { styleSelect.value = styleState.selected; openStyleSettings(); return; }
     styleBusy = true; styleSelect.disabled = true; ++styleRevision;
     try {
       const reply = await chrome.runtime.sendMessage({ type: "SET_QUESTION_STYLE", selected });

@@ -3,7 +3,7 @@ import { readProfiles, saveProfile, selectProfile, removeProfile } from "./model
 import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
 import { renderFaq } from "./faq.js";
-import { QUESTION_STYLE_KEY, normalizeQuestionStyle, readQuestionStyle } from "./questionStyles.js";
+import { QUESTION_STYLE_KEY, MAX_CUSTOM_STYLES, normalizeQuestionStyle, readQuestionStyle, activeCustomStyle } from "./questionStyles.js";
 const theme = document.createElement("style");
 theme.textContent = globalThis.ZhihuUiTheme;
 document.head.append(theme);
@@ -50,52 +50,110 @@ let modeBusy = true;
 const modeButtons = [$("#summaryModeButton"), $("#originalModeButton")];
 let styleState = normalizeQuestionStyle(), styleBusy = true;
 const styleSelect = $("#questionStyleSelect");
-$("#customStyleForm").classList.toggle("is-hidden", !fullDashboard);
+let editingStyleId = "";
+$("#customStyleLibrary").classList.toggle("is-hidden", !fullDashboard);
 $("#editStyleButton").classList.toggle("is-hidden", fullDashboard);
 $("#editStyleButton").onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?view=dashboard#questionStyle") }).catch(() => styleStatus("无法打开 Dashboard，请重试。", true));
 readQuestionStyle(chrome).then(style => {
   renderQuestionStyle(style);
-  $("#customStyleName").value = style.customName;
-  $("#customStylePrompt").value = style.customPrompt;
-  styleBusy = false; styleSelect.disabled = false; $("#saveStyleButton").disabled = false;
+  setStyleBusy(false);
   if (fullDashboard && location.hash === "#questionStyle") $("#questionStyle").scrollIntoView();
 }).catch(() => styleStatus("读取风格失败，请重新打开面板。", true));
+function setStyleBusy(busy) {
+  styleBusy = busy;
+  styleSelect.disabled = busy;
+  $("#saveStyleButton").disabled = busy;
+  $("#newStyleButton").disabled = busy || styleState.customStyles.length >= MAX_CUSTOM_STYLES;
+  document.querySelectorAll("#customStyleList button").forEach(button => { button.disabled = busy; });
+}
+// Every style write goes through the background so all open pages get one change event.
+async function sendStyle(message, success) {
+  if (styleBusy) return false;
+  setStyleBusy(true);
+  try {
+    const reply = await chrome.runtime.sendMessage(message);
+    if (!reply?.ok) throw new Error(reply?.error || "保存失败，请重试。");
+    renderQuestionStyle(await readQuestionStyle(chrome));
+    styleStatus(success);
+    return true;
+  } catch (error) {
+    styleSelect.value = styleState.selected;
+    styleStatus(error.message || "保存失败，请重试。", true);
+    return false;
+  } finally { setStyleBusy(false); }
+}
+function openStyleEditor(style = null) {
+  editingStyleId = style?.id || "";
+  $("#customStyleFormTitle").textContent = style ? `编辑「${style.name}」` : "新建风格";
+  $("#customStyleName").value = style?.name || "";
+  $("#customStylePrompt").value = style?.prompt || "";
+  $("#customStyleForm").classList.remove("is-hidden");
+  $("#customStyleName").focus();
+}
+function closeStyleEditor() { editingStyleId = ""; $("#customStyleForm").classList.add("is-hidden"); }
+$("#newStyleButton").onclick = () => openStyleEditor();
+$("#cancelStyleButton").onclick = closeStyleEditor;
 styleSelect.onchange = async () => {
   if (styleBusy) return;
-  const selected = styleSelect.value;
-  if (selected === "custom" && !styleState.customPrompt) {
+  if (styleSelect.value === "__new") {
     styleSelect.value = styleState.selected;
-    if (fullDashboard) { $("#customStylePrompt").focus(); styleStatus("先填写并保存下面的自定义风格。", true); }
-    else $("#editStyleButton").click();
+    if (fullDashboard) openStyleEditor(); else $("#editStyleButton").click();
     return;
   }
-  styleBusy = true; styleSelect.disabled = true; $("#saveStyleButton").disabled = true;
-  try {
-    const reply = await chrome.runtime.sendMessage({ type: "SET_QUESTION_STYLE", selected });
-    if (!reply?.ok) throw new Error(reply?.error || "保存失败，请重试。");
-    renderQuestionStyle(await readQuestionStyle(chrome)); styleStatus("已保存，下次分析使用此风格。已有草稿保持不变。");
-  }
-  catch (error) { styleSelect.value = styleState.selected; styleStatus(error.message || "保存失败，请重试。", true); }
-  finally { styleBusy = false; styleSelect.disabled = false; $("#saveStyleButton").disabled = false; }
+  await sendStyle({ type: "SET_QUESTION_STYLE", selected: styleSelect.value }, "已保存，下次分析使用此风格。已有草稿保持不变。");
 };
 $("#customStyleForm").onsubmit = async event => {
   event.preventDefault();
-  if (styleBusy) return;
-  styleBusy = true; styleSelect.disabled = true; $("#saveStyleButton").disabled = true;
-  try {
-    const reply = await chrome.runtime.sendMessage({ type: "SAVE_CUSTOM_QUESTION_STYLE", name: $("#customStyleName").value, prompt: $("#customStylePrompt").value });
-    if (!reply?.ok) throw new Error(reply?.error || "保存失败，请重试。");
-    renderQuestionStyle(await readQuestionStyle(chrome));
-    styleStatus("自定义风格已保存并启用，下次分析生效。");
-  } catch (error) { styleStatus(error.message || "保存失败，请重试。", true); }
-  finally { styleBusy = false; styleSelect.disabled = false; $("#saveStyleButton").disabled = false; }
+  const editing = Boolean(editingStyleId);
+  const saved = await sendStyle({ type: "SAVE_CUSTOM_QUESTION_STYLE", id: editingStyleId, name: $("#customStyleName").value, prompt: $("#customStylePrompt").value },
+    editing ? "风格已更新并启用，下次分析生效。" : "新风格已保存并启用，下次分析生效。");
+  if (saved) closeStyleEditor();
 };
 function renderQuestionStyle(style) {
   styleState = normalizeQuestionStyle(style);
+  const options = [["professional", "专业 · 深入分析"], ["daily", "日常 · 贴近生活"],
+    ...styleState.customStyles.map(item => [item.id, `自定义 · ${item.name}`])];
+  if (styleState.customStyles.length < MAX_CUSTOM_STYLES) options.push(["__new", "＋ 新建自定义风格…"]);
+  styleSelect.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
   styleSelect.value = styleState.selected;
-  styleSelect.querySelector('[value="custom"]').textContent = `自定义 · ${styleState.customName}`;
+  const custom = activeCustomStyle(styleState);
   $("#questionStyleHint").textContent = styleState.selected === "daily" ? "从普通人的生活体验、工作、消费和实际选择出发，用更自然、好懂的话提问。"
-    : styleState.selected === "custom" ? `使用「${styleState.customName}」的角度与表达偏好。` : "关注原因、机制、证据与行业影响，表达准确、清晰。";
+    : custom ? `使用「${custom.name}」的角度与表达偏好。` : "关注原因、机制、证据与行业影响，表达准确、清晰。";
+  if (editingStyleId && !styleState.customStyles.some(item => item.id === editingStyleId)) closeStyleEditor();
+  renderStyleLibrary();
+}
+function renderStyleLibrary() {
+  if (!fullDashboard) return;
+  $("#customStyleCount").textContent = `${styleState.customStyles.length}/${MAX_CUSTOM_STYLES}`;
+  const rows = styleState.customStyles.map(item => {
+    const active = item.id === styleState.selected;
+    const row = document.createElement("article"); row.className = `style-item${active ? " is-active" : ""}`;
+    const info = document.createElement("div"); info.className = "style-item-info";
+    const name = document.createElement("h4"); name.textContent = item.name;
+    if (active) { const pill = document.createElement("span"); pill.className = "style-pill"; pill.textContent = "使用中"; name.append(pill); }
+    const prompt = document.createElement("p"); prompt.textContent = item.prompt;
+    info.append(name, prompt);
+    const actions = document.createElement("div"); actions.className = "style-item-actions";
+    const use = document.createElement("button"); use.type = "button"; use.className = "qa-secondary"; use.textContent = active ? "已启用" : "使用"; use.disabled = active || styleBusy;
+    use.onclick = () => sendStyle({ type: "SET_QUESTION_STYLE", selected: item.id }, `已切换到「${item.name}」，下次分析生效。`);
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "qa-quiet"; edit.textContent = "编辑"; edit.disabled = styleBusy;
+    edit.onclick = () => openStyleEditor(item);
+    const remove = document.createElement("button"); remove.type = "button"; remove.className = "qa-quiet danger"; remove.textContent = "删除"; remove.disabled = styleBusy;
+    remove.onclick = () => {
+      if (!confirm(`删除风格「${item.name}」？${active ? "删除后将切回「专业」风格。" : ""}`)) return;
+      sendStyle({ type: "DELETE_CUSTOM_QUESTION_STYLE", id: item.id }, `已删除「${item.name}」。`);
+    };
+    actions.append(use, edit, remove);
+    row.append(info, actions);
+    return row;
+  });
+  if (!rows.length) {
+    const empty = document.createElement("p"); empty.className = "empty-state";
+    empty.textContent = "还没有自定义风格。点「新建风格」写下你想要的提问角度，可以保存多个并随时切换。";
+    rows.push(empty);
+  }
+  $("#customStyleList").replaceChildren(...rows);
+  $("#newStyleButton").disabled = styleBusy || styleState.customStyles.length >= MAX_CUSTOM_STYLES;
 }
 function styleStatus(message, error = false) { $("#questionStyleStatus").textContent = message; $("#questionStyleStatus").classList.toggle("is-error", error); }
 loadDescriptionMode();

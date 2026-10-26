@@ -1,5 +1,5 @@
 import { generateQuestions } from "./modelClient.js";
-import { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle } from "./questionStyles.js";
+import { readQuestionStyle, publicQuestionStyle, selectQuestionStyle, saveCustomStyle, deleteCustomStyle, questionStyleName } from "./questionStyles.js";
 import { activeModelConfig } from "./modelProfiles.js";
 import { SITE_RULES_KEY, isSiteExcluded } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, normalizeDescriptionMode, readDescriptionMode, originalDescription, prepareDescription, fitDescriptionBody } from "./draftPreferences.js";
@@ -57,8 +57,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "SAVE_CUSTOM_QUESTION_STYLE") {
-    saveCustomStyle(chrome, message.name, message.prompt).then(data => sendResponse({ ok: true, data: publicQuestionStyle(data) }))
+    saveCustomStyle(chrome, message.name, message.prompt, message.id || "").then(data => sendResponse({ ok: true, data: publicQuestionStyle(data) }))
       .catch(error => sendResponse({ ok: false, error: error.message || "保存自定义风格失败。" }));
+    return true;
+  }
+  if (message?.type === "DELETE_CUSTOM_QUESTION_STYLE") {
+    deleteCustomStyle(chrome, message.id).then(data => sendResponse({ ok: true, data: publicQuestionStyle(data) }))
+      .catch(error => sendResponse({ ok: false, error: error.message || "删除自定义风格失败。" }));
     return true;
   }
   if (message?.type === "GET_SITE_ACCESS") {
@@ -198,8 +203,8 @@ async function requestQuestions(payload, sender = {}, requestId) {
     delivery = delivery.then(() => chrome.tabs.sendMessage(sender.tab.id, { type: "ZH_QUESTION_PROGRESS", requestId, ...data }, target)).catch(() => {});
   };
   try {
-    const decorateStyle = item => ({ ...decorate(item), questionStyle: questionStyle.selected,
-      questionStyleName: questionStyle.selected === "custom" ? questionStyle.customName : questionStyle.selected === "daily" ? "日常" : "专业" });
+    const styleName = questionStyleName(questionStyle);
+    const decorateStyle = item => ({ ...decorate(item), questionStyle: questionStyle.selected, questionStyleName: styleName });
     const result = await generateQuestions(modelPage, { ...config, descriptionMode: mode, questionStyle }, undefined, {
       onItem: (item, index) => progress({ item: decorateStyle(item), index }),
       onProgress: (phase) => progress({ phase }),
