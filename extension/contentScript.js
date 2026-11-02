@@ -349,7 +349,7 @@
       const pageData = extractPageContent();
       currentRequest.extractMs = Math.round(performance.now() - started);
       currentRequest.url = pageData.url;
-      if (pageData.selectedText.length < 50 && pageData.mainText.length < 200 && pageData.description.length < 100) {
+      if (!pageData.shortNote && pageData.selectedText.length < 50 && pageData.mainText.length < 200 && pageData.description.length < 100) {
         throw new Error("当前页面正文较少，可以先选中一段文字再分析。");
       }
 
@@ -384,7 +384,7 @@
     const remembered = lastSelection.url === location.href ? lastSelection.text : "";
 
     return {
-      title: cleanText(document.title).slice(0, 500),
+      title: cleanText(article.title || document.title).slice(0, 500),
       url: location.href,
       description: cleanText(
         document.querySelector('meta[name="description"]')?.content ||
@@ -395,6 +395,7 @@
       // Preserve the complete extracted text for local original-mode drafts.
       // The model client applies its separate 6,000-character input budget.
       mainText: article.text,
+      shortNote: article.kind === "note" && Boolean(article.text),
       images: article.images || [],
       originalPartial: article.originalPartial,
       originalUnavailableReason: article.originalUnavailableReason,

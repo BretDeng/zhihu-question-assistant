@@ -49,6 +49,50 @@ function documentWithBody(hostname, bodyAttrs, ...children) {
 const first = "真实正文第一段，保留其中的事实、标点和文字顺序。".repeat(6);
 const second = "真实正文第二段，重复段落也是原文的一部分，不应该被去重。".repeat(5);
 
+function note(title, body, attrs = {}) {
+  return element("div", { class: "note-container", ...attrs },
+    element("div", { class: "author-container" }, "作者 关注"),
+    element("div", { class: "note-content" },
+      element("div", { id: "detail-title" }, title),
+      element("div", { id: "detail-desc", class: "desc" }, ...body)),
+    element("div", { class: "comments-container" }, element("p", {}, second)));
+}
+test("Xiaohongshu reads short DIV/SPAN notes in a detail dialog without comments or feed text", () => {
+  const doc = documentFor("www.xiaohongshu.com",
+    element("main", {}, element("p", {}, first)),
+    element("div", { role: "dialog" }, note("GPT原来你是这样看我的", [
+      element("span", {}, "第一行文字"), element("br"),
+      element("span", {}, "Second line"), element("a", {}, "#ChatGPT")])));
+  const result = extractor.extractDetailed(doc);
+  assert.equal(result.title, "GPT原来你是这样看我的");
+  assert.equal(result.text, "GPT原来你是这样看我的\n第一行文字\nSecond line#ChatGPT");
+  assert.equal(result.originalUnavailableReason, "");
+  assert.equal(result.kind, "note");
+});
+test("Xiaohongshu ignores hidden previous notes and picks the currently visible note on each extraction", () => {
+  const previous = note("旧笔记", ["旧内容"], { style: { display: "none" } });
+  const current = note("新笔记", ["新内容"]);
+  const doc = documentFor("xiaohongshu.com", previous, current);
+  assert.equal(extractor.extract(doc), "新笔记\n新内容");
+  previous.style.display = "block"; current.style.display = "none";
+  assert.equal(extractor.extract(doc), "旧笔记\n旧内容");
+});
+test("Xiaohongshu never falls back to comments, feed prose, or ambiguous detail notes", () => {
+  for (const children of [
+    [element("main", {}, element("p", {}, first))],
+    [note("", [])],
+    [note("笔记一", ["正文一"]), note("笔记二", ["正文二"])],
+  ]) {
+    const result = extractor.extractDetailed(documentFor("www.xiaohongshu.com", ...children));
+    assert.equal(result.text, "");
+    assert.match(result.originalUnavailableReason, /小红书/);
+  }
+});
+test("ordinary sites still exclude dialogs even if they imitate Xiaohongshu markup", () => {
+  const doc = documentFor("example.com", element("div", { role: "dialog" }, note("标题", [first])));
+  assert.equal(extractor.extract(doc), "");
+});
+
 test("generic paywall markers preserve readable content and match mixed-case names", () => {
   for (const className of ["paywall", "Paywall", "PAYWALL"]) {
     const doc = documentFor("example.com", element("article", { class: "paywall-content" }, element("p", {}, first)),

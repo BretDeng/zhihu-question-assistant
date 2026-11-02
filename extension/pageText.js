@@ -5,7 +5,7 @@ globalThis.ZhihuPageText = (() => {
   const NOISE = /(?:^|[\s_-])(?:sidebar|recommend(?:ation)?s?|related|comments?|share|social|breadcrumb|advert(?:isement)?|ads|paywall|subscribe|toolbar|navigation|menu)(?:$|[\s_-])/i;
   const PAYWALL_TEXT = /finish reading|continue reading|keep reading|订阅后|继续阅读/i;
 
-  function reader(doc) {
+  function reader(doc, allowDialog = false) {
     const cache = new WeakMap();
     const exclusions = new WeakMap();
     const caixin = /(^|\.)caixin\.com$/i.test(doc.location?.hostname || "");
@@ -23,7 +23,7 @@ globalThis.ZhihuPageText = (() => {
       // Page-level classes describe site features (WeChat's body has "comment_feature"), not noise regions.
       const shell = element.tagName === "BODY" || element.tagName === "HTML";
       // Match Caixin's verified AI-instruction marker, not words in real prose.
-      const result = element.matches(OMIT) || (!shell && NOISE.test(classLabel(element))) || (caixin && element.matches(".aitt")) || !visible(element);
+      const result = element.matches(allowDialog ? OMIT.replace(",[role='dialog']", "") : OMIT) || (!shell && NOISE.test(classLabel(element))) || (caixin && element.matches(".aitt")) || !visible(element);
       exclusions.set(element, result);
       return result;
     }
@@ -97,6 +97,7 @@ globalThis.ZhihuPageText = (() => {
   }
 
   function extractDetailed(doc = document) {
+    if (/(^|\.)xiaohongshu\.com$/i.test(doc.location?.hostname || "")) return extractNote(doc);
     const read = reader(doc);
     let found;
     if (read.caixin) {
@@ -122,6 +123,34 @@ globalThis.ZhihuPageText = (() => {
     try { images = articleImages(read, containers, doc); } catch { /* Images are optional. */ }
     return { text, images, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
       !text ? "未找到可靠的文章正文，已停止复制页面菜单和其他杂项。请等待正文加载后重试，或切换为「概括提问」并选中所需内容。" : "" };
+  }
+  function extractNote(doc) {
+    // Notes use DIV/SPAN rather than article/P, often inside a detail dialog.
+    // Permit dialogs only for this site-specific path; never read the feed,
+    // author profile, engagement controls or comments as article material.
+    const read = reader(doc, true);
+    const roots = [...doc.querySelectorAll("#noteContainer,.note-container")].filter(root => read.allowed(root));
+    const notes = [];
+    for (const root of roots) {
+      const content = [...root.querySelectorAll(".note-content")].filter(node => read.allowed(node));
+      const scopes = content.length ? content : [root];
+      for (const scope of scopes) {
+        const title = [...scope.querySelectorAll("#detail-title,.title")].map(node => read.block(node)).find(Boolean) || "";
+        const body = [...scope.querySelectorAll("#detail-desc,.desc")].map(node => read.block(node)).find(Boolean) || "";
+        if (!title && !body) continue;
+        notes.push({ title, text: [title, body].filter(Boolean).join("\n"), root });
+      }
+    }
+    // Nested containers can refer to the same active note. Distinct visible
+    // notes are ambiguous, so don't select a random one from an underlying feed.
+    const unique = [...new Map(notes.map(note => [note.text, note])).values()];
+    const note = unique.length === 1 ? unique[0] : null;
+    let images = [];
+    if (note) try {
+      images = articleImages(read, [...note.root.querySelectorAll(".media-container,.note-slider,.swiper")], doc);
+    } catch { /* Optional media must not block the note text. */ }
+    return { text: note?.text || "", title: note?.title || "", kind: "note", images, originalPartial: false,
+      originalUnavailableReason: note ? "" : "未找到当前小红书帖文的文字正文。请打开帖文详情并等待加载；图片中的文字暂不支持识别。" };
   }
   return { extract: (doc = document) => extractDetailed(doc).text, extractDetailed, extractBlock: element => reader(element.ownerDocument || document).block(element) };
 })();
