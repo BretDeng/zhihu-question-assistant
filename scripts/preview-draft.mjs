@@ -13,6 +13,9 @@ const routes = new Map([
   ["/extension/zhihuDraft.js", ["../extension/zhihuDraft.js", "text/javascript"]],
   ["/extension/zhihuDraftLifecycle.js", ["../extension/zhihuDraftLifecycle.js", "text/javascript"]],
   ["/models", ["../extension/popup.html", "text/html"]],
+  ["/guide", ["../extension/guide.html", "text/html"]],
+  ["/guide.js", ["../extension/guide.js", "text/javascript"]],
+  ["/guide.css", ["../extension/guide.css", "text/css"]],
   ["/questions", ["../test/fixtures/questions.html", "text/html"]],
   ["/extraction", ["../test/fixtures/page-text.html", "text/html"]],
   ["/page-text-fixture.js", ["../test/fixtures/page-text-fixture.js", "text/javascript"]],
@@ -26,7 +29,7 @@ http.createServer(async (request, response) => {
   if (!route) { response.writeHead(404); response.end(); return; }
   try {
     let content = await readFile(new URL(route[0], import.meta.url));
-    if (pathname === "/models") content = content.toString().replace('<script src="uiTheme.js">', '<script src="/ui-fixture.js"></script><script src="uiTheme.js">');
+    if (pathname === "/models" || pathname === "/guide") content = content.toString().replace('<script src="uiTheme.js">', '<script src="/ui-fixture.js"></script><script src="uiTheme.js">');
     response.writeHead(200, { "Content-Type": `${route[1]}; charset=utf-8`, "Cache-Control": "no-store" });
     response.end(content);
   } catch { response.writeHead(500); response.end(); }

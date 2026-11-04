@@ -4,7 +4,7 @@
 <body>
 <main class="app-shell guide">
   <header class="app-header"><div><p class="eyebrow">新手教程</p><h1>一步一步开始用</h1></div></header>
-  <p id="stepProgress" class="step-progress">第 1 步，共 6 步</p>
+  <p id="stepProgress" class="step-progress" aria-live="polite">第 1 步，共 5 步</p>
   <ol class="steps" id="steps">
     <li class="step-card is-current">
       <h2>先看它会做什么</h2>
@@ -13,38 +13,64 @@
       <p class="note">最后的「发布」始终是你自己点的。助手不会替你发。</p>
     </li>
     <li class="step-card">
-      <h2>添加一个模型</h2>
-      <p>生成问题之前，先添加一个模型。用知乎直答最省事；已有别的接口也可以。</p>
-      <button id="openSettingsButton" class="qa-primary" type="button">打开模型设置</button>
-      <p id="modelStatus" class="note">正在检查这台电脑上的配置…</p>
+      <h2>连接你的模型</h2>
+      <p>在这里保存即可，设置会同步到模型面板。</p>
+      <label class="field">使用已有配置或新建<select id="profileSelect" disabled><option value="">新建配置</option></select></label>
+      <form id="guideModelForm">
+        <fieldset id="modelFields" disabled>
+          <label class="field">配置名称<input id="nameInput" maxlength="60" placeholder="例如：我的知乎直答"></label>
+          <label class="field">模型提供方<select id="providerInput"><option value="zhida">知乎直答</option><option value="openai">OpenAI 兼容 API（含 OpenRouter）</option></select></label>
+          <p id="providerHelp" class="note"></p>
+          <p id="zhidaHelp" class="note">还没有密钥？前往<a href="https://developer.zhihu.com/profile" target="_blank" rel="noopener">知乎开放平台个人中心 ↗</a>创建 Access Secret，再回到这里粘贴。</p>
+          <label class="field is-hidden" id="baseUrlField">API 地址<input id="baseUrlInput" type="url" placeholder="https://api.openai.com/v1" autocomplete="off"><small>OpenRouter：https://openrouter.ai/api/v1</small></label>
+          <label class="field">模型名称<input id="modelInput" list="modelOptions" placeholder="zhida-agent" autocomplete="off"><datalist id="modelOptions"></datalist></label>
+          <label class="field">API Key / Access Secret<input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴密钥"></label>
+          <label class="remember-option"><input id="rememberKeyInput" type="checkbox" checked><span>在这台设备上记住密钥</span></label>
+          <p class="note">密钥保存在扩展本机存储，不同步云端，也不是系统钥匙串。取消勾选后仅在当前浏览器会话保留。</p>
+          <button class="qa-primary" type="submit">保存并继续</button>
+        </fieldset>
+      </form>
+      <p id="modelStatus" class="note" role="status">正在读取配置…</p>
     </li>
     <li class="step-card">
-      <h2>把密钥填进去</h2>
-      <p><b>用知乎直答：</b>打开<a href="https://developer.zhihu.com/profile" target="_blank" rel="noopener">个人中心</a>，登录后创建一个密钥，复制 Access Secret。回到模型设置，提供方选「知乎直答」，粘贴密钥，点保存。</p>
-      <p><b>用自己的 API：</b>填服务商给的地址、模型名和 Key。保存时浏览器如果询问是否允许访问，点允许。</p>
-      <p class="note">密钥只保存在这台电脑上。还没填也没关系，填完再回到网页。</p>
+      <h2>选择你喜欢的提问方式</h2>
+      <form id="preferencesForm">
+        <fieldset id="preferenceFields" disabled>
+          <label class="field">提问风格<select id="styleSelect"><option value="professional">专业 · 原因、证据与趋势</option><option value="daily">日常 · 工作、消费与生活</option></select></label>
+          <div id="customFields" class="is-hidden">
+            <label class="field">风格名称<input id="styleName" maxlength="24" placeholder="例如：上班族视角"></label>
+            <label class="field">风格说明<textarea id="stylePrompt" maxlength="1500" rows="4" placeholder="关注收入、职业选择和生活成本，语言自然，少用术语。"></textarea></label>
+          </div>
+          <label class="field">问题描述<select id="descriptionSelect"><option value="summary">概括提问 · 模型整理背景与讨论点</option><option value="original">网页原文 · 使用已加载的正文</option></select></label>
+          <p class="note">原文不经模型改写；描述与来源合计不超过 3000 字符。</p>
+          <label class="remember-option"><input id="imagesInput" type="checkbox" checked><span>尝试附带原文图片（实验性，最多 6 张）</span></label>
+          <button class="qa-primary" type="submit">保存偏好并继续</button>
+        </fieldset>
+      </form>
+      <p id="preferencesStatus" class="note" role="status"></p>
     </li>
     <li class="step-card">
-      <h2>在文章页点「问」</h2>
-      <p>打开任意一篇文章或新闻，看右下角的「问」，点一下。</p>
-      <p>提问面板会在按钮上方打开。按住「问」，或者按住面板标题栏，两者会一起移动。</p>
+      <h2>试一次，确认模型可用</h2>
+      <p id="trialModel" class="note"></p>
+      <blockquote id="sampleText">某社区图书馆开始延长晚间开放时间，并增加共享自习座位。居民希望下班后有安静的阅读空间，工作人员则需要协调排班与场地维护。图书馆计划根据读者反馈调整服务。</blockquote>
+      <p class="note">点击后会把这段示例发送给已保存的模型，按正常流程生成最多 6 个草稿并预览其中一个，会消耗供应商额度。也可以跳过。</p>
+      <button id="trialButton" class="qa-primary" type="button" disabled>试生成，验证模型</button>
+      <p id="trialStatus" class="note" role="status" aria-live="polite">尚未验证。</p>
+      <article id="trialResult" class="is-hidden"><h3 id="trialTitle"></h3><p id="trialDescription"></p><p id="trialTopics" class="note"></p></article>
     </li>
     <li class="step-card">
-      <h2>生成，然后改一改</h2>
-      <p>点「分析当前网页」。草稿会一个一个出现，不用等全部完成再看。</p>
-      <p>如果只想问某一段，先用鼠标选中那段，再点分析。</p>
-      <p>标题、描述和话题都可以直接改。</p>
-    </li>
-    <li class="step-card">
-      <h2>带到知乎，自己发布</h2>
-      <p>在满意的那条上点「去知乎提问」。助手会打开知乎，填好标题、描述，并尽量匹配话题。</p>
-      <p>你检查一遍，自己点发布。</p>
+      <h2>现在，去读一篇文章</h2>
+      <p id="completionStatus" class="note"></p>
+      <p>刷新文章页面，点击右下角「问」，再点「分析当前网页」。概括模式下，也可以先选中想讨论的文字。</p>
+      <p>草稿出现后修改标题、描述和话题，点击「去知乎提问」。检查填写结果，再自己点击知乎的发布按钮。</p>
+      <p class="note">按住「问」或面板标题栏可以拖动。之后可在 Dashboard 管理更多模型、自定义风格和网站过滤。</p>
     </li>
   </ol>
   <div class="step-nav">
     <button id="backButton" class="qa-secondary" type="button" disabled>上一步</button>
     <button id="nextButton" class="qa-primary" type="button">下一步</button>
   </div>
+  <p id="navigationStatus" class="note" role="status"></p>
   <p class="faq-entry"><button id="faqToggle" class="qa-quiet" type="button">遇到报错？查看常见问题</button></p>
   <section id="faq" class="faq is-hidden" aria-labelledby="faqHeading">
     <h2 id="faqHeading">常见问题与报错</h2>

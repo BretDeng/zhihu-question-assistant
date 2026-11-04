@@ -8,6 +8,10 @@
 .step-card p{margin:0 0 12px}
 .step-card .qa-primary{margin:4px 0 14px}
 .note{font-size:13px;color:var(--qa-muted)}
+.guide fieldset{border:0;padding:0;margin:0;min-width:0}.guide .field{margin-bottom:12px}.guide .field input,.guide .field select,.guide textarea{width:100%;min-width:0}.guide textarea{resize:vertical}.guide .remember-option{margin-bottom:14px}
+.guide .is-error{color:var(--qa-danger)}
+.guide blockquote,#trialResult{margin:12px 0;padding:16px;background:var(--qa-bg);border:1px solid var(--qa-line);border-radius:12px;font-size:13px}
+#trialResult h3{font-size:16px;margin:0 0 10px}#trialResult p{white-space:pre-wrap;overflow-wrap:anywhere}#navigationStatus{margin-top:10px}
 .step-card a{color:var(--qa-accent)}
 .step-nav{display:flex;justify-content:space-between;gap:12px;margin-top:16px}
 .step-nav button{min-width:112px;font-size:14px;padding:10px 18px}
