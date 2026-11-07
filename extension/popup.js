@@ -1,4 +1,5 @@
 import { DEFAULT_BASE_URL, resolveConfig } from "./modelClient.js";
+import { attachModelCatalog } from "./modelCatalog.js";
 import { readProfiles, saveProfile, selectProfile, removeProfile } from "./modelProfiles.js";
 import { SITE_RULES_KEY, parseSites } from "./siteRules.js";
 import { DESCRIPTION_MODE_KEY, ATTACH_IMAGES_KEY, normalizeDescriptionMode, readDescriptionMode } from "./draftPreferences.js";
@@ -284,7 +285,15 @@ function openEditor(item) {
   updateProviderFields(); $("#profileEditor").classList.remove("is-hidden"); $("#nameInput").focus();
   $("#profileEditor").scrollIntoView({ block: "nearest" });
 }
+const catalog = attachModelCatalog(() => {
+  const previous = state?.items.find(item => item.id === editingId);
+  const typed = $("#apiKeyInput").value.trim();
+  const raw = { provider: $("#providerInput").value, baseURL: $("#baseUrlInput").value, apiKey: typed || (editingId && keyFor(editingId)) };
+  if (previous && !typed && new URL(resolveConfig({...previous,apiKey:raw.apiKey}).baseURL).origin !== new URL(resolveConfig(raw).baseURL).origin) throw new Error("API 域名已改变，请填写新供应商的密钥后获取列表。");
+  return raw;
+});
 function updateProviderFields() {
+  catalog.reset();
   const zhida = $("#providerInput").value === "zhida";
   $("#baseUrlField").classList.toggle("is-hidden", zhida);
   $("#modelInput").placeholder = zhida ? "zhida-agent" : "gpt-4o-mini";

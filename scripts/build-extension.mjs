@@ -11,10 +11,14 @@ await mkdir(path.join(root, "dist"), { recursive: true });
 const destination = path.join(root, "dist", name);
 const files = ["manifest.json", "modelClient.js", "modelProfiles.js", "uiTheme.js", "draftPreferences.js", "descriptionLimit.js", "pageText.js", "siteRules.js", "siteAccess.js", "draggable.js", "serviceWorker.js", "popup.html", "popup.js", "styles.css", "guide.html", "guide.js", "guide.css", "faq.js", "contentScript.js", "zhihuDom.js", "zhihuComposer.js", "zhihuTopics.js", "zhihuDraftLifecycle.js", "zhihuDraft.js"];
 files.push("questionStyles.js");
+files.push("modelCatalog.js");
+files.push(...[16, 32, 48, 128, 512].map(size => `icons/icon-${size}.png`));
 // The packaged extension must contain every file it loads: manifest entries,
 // page <script>/<link> tags, and the ES module import graph behind them.
 const read = (name) => readFile(path.join(root, "extension", name), "utf8");
 const referenced = new Set([...(await read("manifest.json")).matchAll(/"([\w.-]+\.(?:js|html|css))"/g)].map((match) => match[1]));
+Object.values(manifest.icons || {}).forEach(icon => referenced.add(icon));
+Object.values(manifest.action?.default_icon || {}).forEach(icon => referenced.add(icon));
 for (const page of ["popup.html", "guide.html"]) {
   referenced.add(page);
   for (const match of (await read(page)).matchAll(/(?:src|href)="([\w.-]+\.(?:js|css))"/g)) referenced.add(match[1]);

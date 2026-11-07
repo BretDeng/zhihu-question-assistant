@@ -1,4 +1,5 @@
 import { readProfiles, saveProfile, activeModelConfig } from "./modelProfiles.js";
+import { attachModelCatalog } from "./modelCatalog.js";
 import { resolveConfig, ZHIDA_MODELS } from "./modelClient.js";
 import { readQuestionStyle, selectQuestionStyle, saveCustomStyle } from "./questionStyles.js";
 import { DESCRIPTION_MODE_KEY, ATTACH_IMAGES_KEY, normalizeDescriptionMode } from "./draftPreferences.js";
@@ -13,6 +14,12 @@ const api = globalThis.chrome;
 let index = 0, busy = false, ready = false, modelDirty = false, preferenceDirty = false;
 let profiles, savedFingerprint = "", verifiedFingerprint = "";
 const fingerprint = config => JSON.stringify([config.provider, config.baseURL, config.model, config.apiKey]);
+const catalog = attachModelCatalog(() => {
+  const id = $("#profileSelect").value, previous = profiles?.items.find(item=>item.id===id), typed = $("#apiKeyInput").value.trim();
+  const raw = {provider:$("#providerInput").value,baseURL:$("#baseUrlInput").value,apiKey:typed || profiles?.localKeys[id] || profiles?.sessionKeys[id]};
+  if(previous && !typed && new URL(resolveConfig({...previous,apiKey:raw.apiKey}).baseURL).origin !== new URL(resolveConfig(raw).baseURL).origin) throw new Error("API 域名已改变，请填写新供应商的密钥后获取列表。");
+  return raw;
+});
 renderFaq($("#faqList"), $("#faqSearch"));
 
 function status(id, message, error = false) {
@@ -40,6 +47,7 @@ function show(next) {
     : "模型配置尚未就绪，请返回第 2 步完成设置。";
 }
 function providerFields() {
+  catalog.reset();
   const zhida = $("#providerInput").value === "zhida";
   $("#baseUrlField").classList.toggle("is-hidden", zhida);
   $("#zhidaHelp").classList.toggle("is-hidden", !zhida);

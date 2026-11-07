@@ -48,7 +48,7 @@
 
 位置：`extension/modelClient.js` 的 `resolveConfig` 和 `generateQuestions`。
 
-填写 `https://openrouter.ai/api/v1/chat/completions` 能通过配置校验，但实际请求会再追加 `/chat/completions`，变成重复路径。
+填写 `https://api.example.com/v1/chat/completions` 能通过配置校验，但实际请求会再追加 `/chat/completions`，变成重复路径。
 
 ### 2. P2：历史选区可能污染下一次分析
 

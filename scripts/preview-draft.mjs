@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 // Serve only public UI fixtures and allowlisted extension files, never keys.
 const routes = new Map([
+  ["/modelCatalog.js", ["../extension/modelCatalog.js", "text/javascript"]],
   ["/faq.js", ["../extension/faq.js", "text/javascript"]],
   ["/questionStyles.js", ["../extension/questionStyles.js", "text/javascript"]],
   ["/extension/questionStyles.js", ["../extension/questionStyles.js", "text/javascript"]],
