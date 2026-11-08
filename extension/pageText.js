@@ -9,6 +9,7 @@ globalThis.ZhihuPageText = (() => {
     const cache = new WeakMap();
     const exclusions = new WeakMap();
     const caixin = /(^|\.)caixin\.com$/i.test(doc.location?.hostname || "");
+    const wechat = doc.location?.hostname?.toLowerCase() === "mp.weixin.qq.com";
     function visible(element) {
       const style = doc.defaultView?.getComputedStyle(element);
       return !element.hidden && style?.display !== "none" && style?.visibility !== "hidden" && style?.visibility !== "collapse" && style?.contentVisibility !== "hidden";
@@ -16,7 +17,15 @@ globalThis.ZhihuPageText = (() => {
     function classLabel(element) {
       // paywall-content is the readable body on sites such as Foreign Affairs.
       // Remove that token before the noise test so the gate named "paywall" is still skipped.
-      return `${element.id} ${element.getAttribute("class") || ""}`.replace(/(?:^|[\s_-])paywall[-_]content(?=$|[\s_-])/ig, " ");
+      let label = `${element.id} ${element.getAttribute("class") || ""}`;
+      // WeChat text-share posts use "share" for the article itself. Exempt
+      // only verified body/shell tokens; sharing widgets still count as noise.
+      if (wechat) {
+        if (element.id === "js_article") label = label.replace(/\bshare_content_page\b/g, "");
+        if (element.id === "js_text_desc") label = label.replace(/\bshare_notice_inner\b/g, "");
+        if (element.matches(".share_notice") && element.querySelectorAll("#js_text_desc").length) label = label.replace(/\b(?:share_notice|js_share_notice_dom)\b/g, "");
+      }
+      return label.replace(/(?:^|[\s_-])paywall[-_]content(?=$|[\s_-])/ig, " ");
     }
     function omitted(element) {
       if (exclusions.has(element)) return exclusions.get(element);
@@ -67,7 +76,7 @@ globalThis.ZhihuPageText = (() => {
       for (let node = element; node; node = node.parentElement) if (!visible(node)) return false;
       return true;
     }
-    return { block, best, rendered, allowed, caixin, paywallGate };
+    return { block, best, rendered, allowed, caixin, wechat, paywallGate };
   }
 
   const MAX_IMAGES = 6;
@@ -104,7 +113,7 @@ globalThis.ZhihuPageText = (() => {
       // Actual article container, not the header's AI prompt.
       found = read.best(doc.querySelectorAll("#Main_Content_Val"));
     } else {
-      found = read.best(doc.querySelectorAll(BODY_SELECTORS)) || read.best(doc.querySelectorAll("article")) || read.best(doc.querySelectorAll("main,[role='main']"), true);
+      found = (read.wechat && read.best(doc.querySelectorAll("#js_text_desc"))) || read.best(doc.querySelectorAll(BODY_SELECTORS)) || read.best(doc.querySelectorAll("article")) || read.best(doc.querySelectorAll("main,[role='main']"), true);
       if (!found) {
         // Limited prose-container fallback, never the entire page/body shell.
         const parents = [...doc.querySelectorAll("p")].filter(p => read.block(p).length >= 80).flatMap(p => [p.parentElement, p.parentElement?.parentElement]).filter(Boolean);
@@ -121,7 +130,8 @@ globalThis.ZhihuPageText = (() => {
     // Caixin places the lead photo just above the text container.
     const containers = read.caixin ? [...doc.querySelectorAll(".article_media_pic"), found?.element] : [found?.element];
     try { images = articleImages(read, containers, doc); } catch { /* Images are optional. */ }
-    return { text, images, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
+    const title = read.wechat ? [...doc.querySelectorAll("#js_text_title")].map(node => read.block(node)).find(Boolean) || "" : "";
+    return { text, title, images, originalPartial: Boolean(caixinPartial || paywallPartial), originalUnavailableReason:
       !text ? "未找到可靠的文章正文，已停止复制页面菜单和其他杂项。请等待正文加载后重试，或切换为「概括提问」并选中所需内容。" : "" };
   }
   function extractNote(doc) {
