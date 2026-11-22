@@ -142,7 +142,8 @@ $("#preferencesForm").onsubmit = async event => {
       // Refresh immediately so retrying another failed save never adds duplicates.
       const style = await readQuestionStyle(api);
       const saved = style.customStyles.find(item => item.id === style.selected);
-      $("#styleSelect").add(new Option(saved.name, saved.id));
+      // Keep the trailing "＋ 新建自定义风格" entry last.
+      $("#styleSelect").add(new Option(saved.name, saved.id), $("#styleSelect").lastElementChild);
       $("#styleSelect").value = saved.id;
       $("#customFields").classList.add("is-hidden");
       $("#stylePrompt").required = false;

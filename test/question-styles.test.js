@@ -83,7 +83,7 @@ test("background uses saved style and captures it for an entire streamed generat
     runtime: { onMessage: { addListener(fn) { listener = fn; } } },
     tabs: { onRemoved: { addListener() {} }, query: async () => [{ id: 1 }], sendMessage: async (_id, message) => delivered.push(message) } };
   const source = (await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8")).replace(/^import .*?;\n/gm, "");
-  vm.runInNewContext(source, { ...preferences, ...styles, SITE_RULES_KEY, chrome, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }),
+  vm.runInNewContext(source, { ...preferences, ...styles, SITE_RULES_KEY, chrome, AbortController, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }),
     generateQuestions: async (_page, config, _fetch, callbacks) => {
       assert.equal(config.questionStyle.selected, "daily");
       callbacks.onItem(item, 0); ready();

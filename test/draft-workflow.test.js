@@ -4,7 +4,7 @@ import vm from "node:vm";
 import { test } from "node:test";
 
 const source = await readFile(new URL("../extension/zhihuDraft.js", import.meta.url), "utf8");
-async function runWorkflow({ failure = false, question = "生成的问题？", filling, enabled = true } = {}) {
+async function runWorkflow({ failure = false, question = "生成的问题？", filling, enabled = true, images = [], fillOk = false, bindError = false, fetchImage } = {}) {
   class Element {
     constructor() { this.value = ""; this.children = []; this.classList = { toggle() {}, contains: () => false }; this.style = { setProperty(key, value) { this[key] = value; }, removeProperty(key) { delete this[key]; } }; }
     append(...items) { this.children.push(...items); }
@@ -31,9 +31,14 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
     window: { addEventListener() {} },
     MutationObserver: class { constructor(callback) { mutationCallback = callback; } observe() {} disconnect() {} },
     ZhihuSiteAccess: { watch(callback) { setEnabled = callback; callback(enabled); } },
-    chrome: { runtime: { sendMessage: async (message) => { messages.push(message); return ({ data: {
-      question: "生成的问题？", description: "描述", sourceUrl: "https://example.com", keywords: ["创新药", "生物医药"], createdAt: Date.now(),
-    } }); } } },
+    atob, File,
+    chrome: { runtime: { sendMessage: async (message) => {
+      messages.push(message);
+      if (message.type === "FETCH_DRAFT_IMAGE") return fetchImage(message.index);
+      return ({ data: {
+        question: "生成的问题？", description: "描述", sourceUrl: "https://example.com", keywords: ["创新药", "生物医药"], createdAt: Date.now(), images,
+      } });
+    } } },
     ZhihuQuestionComposer: {
       descriptionBudget: () => 3000,
       clipBody: (text, room) => String(text || "").slice(0, room),
@@ -41,11 +46,15 @@ async function runWorkflow({ failure = false, question = "生成的问题？", f
       fillDraft: async (_draft, { signal }) => {
         if (filling) await filling(signal);
         if (failure) throw new Error("Editor changed");
-        return { ok: false, message: "引用卡片导致文本校验不一致" };
+        return fillOk ? { ok: true, message: "已填写标题、描述和引用来源。" } : { ok: false, message: "引用卡片导致文本校验不一致" };
       },
+      insertImages: async (_question, files) => { calls.push({ inserted: files.map(file => file.name) }); return files.length; },
     },
     ZhihuQuestionTopics: {
-      bindTopics: async (keywords, title) => { calls.push({ keywords: [...keywords], title }); return { bound: keywords, unmatched: [] }; },
+      bindTopics: async (keywords, title) => {
+        if (bindError) throw new Error("topic input changed");
+        calls.push({ keywords: [...keywords], title }); return { bound: keywords, unmatched: [] };
+      },
       summary: () => "已绑定话题",
     },
   };
@@ -118,4 +127,22 @@ test("excluding a site aborts pending filling, hides UI, and retains the saved d
   assert.equal(calls.length, 0);
   assert.equal(messages.some(message => message.type === "CLEAR_ZHIHU_DRAFT"), false);
   setEnabled(true); assert.equal(hosts[0].style.display, undefined);
+});
+
+test("images download in parallel, insert in source order, and the result survives a topic failure", async () => {
+  let inFlight = 0, peak = 0;
+  const images = ["https://img.example/1.jpg", "https://img.example/2.jpg", "https://img.example/3.jpg"];
+  const { calls, section } = await runWorkflow({ images, fillOk: true, bindError: true, fetchImage: async (index) => {
+    inFlight++; peak = Math.max(peak, inFlight);
+    // Later images finish first; insertion must still follow the source order.
+    await new Promise(resolve => setTimeout(resolve, (3 - index) * 5));
+    inFlight--;
+    return index === 1 ? { ok: false, error: "图片尺寸过小" } : { ok: true, data: { base64: "AQID", type: "image/jpeg" } };
+  } });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(peak, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [{ inserted: ["image-1.jpg", "image-3.jpg"] }]);
+  const status = section.children[0].textContent;
+  assert.match(status, /已插入 2 张图片，1 张未插入/);
+  assert.match(status, /话题绑定未完成/);
 });

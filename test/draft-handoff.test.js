@@ -99,7 +99,7 @@ test("generation progress targets the initiating document and finishes delivery 
     onRemoved: { addListener() {} }, async sendMessage(id, message, options) { delivered.push({ id, message, options }); }
   } };
   const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
-  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, ...styles, chrome, setInterval: () => 1, clearInterval() {},
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, ...styles, chrome, Error, AbortController, setInterval: () => 1, clearInterval() {},
     activeModelConfig: async () => ({ apiKey: "private" }),
     generateQuestions: async (_page, _config, _fetch, callbacks) => { callbacks.onProgress("connected"); callbacks.onItem({ question: "问题", description: "描述", keywords: [] }, 0); return { items: [] }; }
   });
@@ -108,4 +108,32 @@ test("generation progress targets the initiating document and finishes delivery 
   assert.equal(delivered[1].options.documentId, "document-1");
   assert.equal(delivered[1].message.requestId, "request-1");
   assert.equal(JSON.stringify(delivered).includes("private"), false);
+});
+
+test("a stop request or a closed tab aborts only that tab's running generation", async () => {
+  let listener, tabRemoved; const signals = [];
+  const chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } }, storage: { local: { get: async () => ({}) }, session: { remove: async () => {} }, onChanged: { addListener() {} } }, tabs: {
+    onRemoved: { addListener(fn) { tabRemoved = fn; } }, async sendMessage() {}
+  } };
+  const source = await readFile(new URL("../extension/serviceWorker.js", import.meta.url), "utf8");
+  vm.runInNewContext(source.replace(/^import .*?;\n/gm, ""), { ...draftPreferences, ...styles, chrome, Error, AbortController, setInterval: () => 1, clearInterval() {},
+    activeModelConfig: async () => ({ apiKey: "private" }),
+    generateQuestions: (_page, _config, _fetch, { signal }) => new Promise((_resolve, reject) => {
+      signals.push(signal);
+      signal.addEventListener("abort", () => reject(new Error("已停止生成。")));
+    }),
+  });
+  const send = (message, sender) => new Promise(resolve => listener(message, sender, resolve));
+  const settle = async () => { while (signals.length < 2) await new Promise(resolve => setTimeout(resolve, 1)); };
+  const first = send({ type: "GENERATE_ZHIHU_QUESTIONS", requestId: "a", payload: {} }, { tab: { id: 7 } });
+  const second = send({ type: "GENERATE_ZHIHU_QUESTIONS", requestId: "a", payload: {} }, { tab: { id: 8 } });
+  await settle();
+  // Another tab cannot stop this one, even with the same request id.
+  await send({ type: "CANCEL_ZHIHU_QUESTIONS", requestId: "a" }, { tab: { id: 9 } });
+  assert.deepEqual(signals.map(signal => signal.aborted), [false, false]);
+  await send({ type: "CANCEL_ZHIHU_QUESTIONS", requestId: "a" }, { tab: { id: 7 } });
+  assert.equal((await first).error, "已停止生成。");
+  assert.equal(signals[1].aborted, false);
+  tabRemoved(8);
+  assert.equal((await second).ok, false);
 });

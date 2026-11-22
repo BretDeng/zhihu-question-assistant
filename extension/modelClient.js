@@ -26,9 +26,14 @@ const SYSTEM_PROMPT = `你是知乎选题编辑。基于引用网页生成 6 个
 // models (notably zhida-agent) answer with explanations instead of JSON.
 const OUTPUT_PROMPT = `只输出 JSON，不输出 Markdown、代码块或解释，第一个字符必须是 {，格式：{"items":[{"question":"标题","description":"背景及讨论点","keywords":["话题1","话题2","话题3","话题4","话题5"]}]}。items 必须恰好 6 项。即使材料简短或话题敏感，也必须返回该 JSON，不要用致歉或说明文字作答。`;
 
+// Model input budgets, in characters. The selection budget matches the content
+// script's MAX_SELECTION so nothing the user selected is silently dropped.
+export const MAX_SELECTED_TEXT = 12000;
+export const MAX_BACKGROUND_WITH_SELECTION = 3000;
+export const MAX_MAIN_TEXT = 10000;
 export function compactSource(page) {
   const clean = (value, limit) => typeof value === "string" ? value.replace(/\u0000/g, "").trim().slice(0, limit) : "";
-  const selectedText = clean(page.selectedText, 8000);
+  const selectedText = clean(page.selectedText, MAX_SELECTED_TEXT);
   const lines = [...new Set(clean(page.mainText, 24000).split(/\n+/).map(x => x.trim()).filter(Boolean))];
   // Selected material is primary; send only a short, non-duplicate background.
   // A multi-paragraph selection rarely matches the body text verbatim, so drop
@@ -38,7 +43,7 @@ export function compactSource(page) {
   const background = selectedText
     ? lines.filter((line) => { const key = squash(line); return key.length < 6 || !selectedKey.includes(key); }).join("\n").split(selectedText).join("").trim()
     : lines.join("\n");
-  return { title: clean(page.title, 500), url: clean(page.url, 2048), description: clean(page.description, 800), selectedText, mainText: background.slice(0, selectedText ? 1500 : 6000) };
+  return { title: clean(page.title, 500), url: clean(page.url, 2048), description: clean(page.description, 800), selectedText, mainText: background.slice(0, selectedText ? MAX_BACKGROUND_WITH_SELECTION : MAX_MAIN_TEXT) };
 }
 export function buildMessages(page, config) {
   if (typeof page?.title !== "string" || !page.title.trim()) throw new Error("缺少网页标题。");
@@ -77,6 +82,10 @@ export async function generateQuestions(page, rawConfig, fetchImpl = fetch, call
   const timeout = setTimeout(() => controller.abort(), 180000);
   // Chrome requires response headers promptly; streaming starts before full generation finishes.
   const headerTimeout = setTimeout(() => controller.abort(), 25000);
+  // The caller's signal stops the request (stop button, closed tab or page).
+  const cancel = () => controller.abort();
+  callbacks.signal?.addEventListener("abort", cancel, { once: true });
+  if (callbacks.signal?.aborted) cancel();
   try {
     const response = await fetchImpl(`${config.baseURL}/chat/completions`, {
       method: "POST",
@@ -114,10 +123,11 @@ export async function generateQuestions(page, rawConfig, fetchImpl = fetch, call
     timings.firstDraftMs ??= timings.totalMs;
     return { ...result, timings };
   } catch (error) {
+    if (callbacks.signal?.aborted) throw new Error("已停止生成。");
     if (controller.signal.aborted) throw new Error("模型请求超时，请重试或选择更快的模型。");
     if (error instanceof TypeError) throw new Error("无法连接模型 API，请检查 HTTPS 地址、网络与扩展的网站访问权限。");
     throw error;
-  } finally { clearTimeout(timeout); clearTimeout(headerTimeout); }
+  } finally { clearTimeout(timeout); clearTimeout(headerTimeout); callbacks.signal?.removeEventListener("abort", cancel); }
 }
 
 async function errorDetail(response) {

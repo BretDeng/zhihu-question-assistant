@@ -147,8 +147,10 @@ test("material compaction deduplicates lines, removes selected material from bac
   assert.equal(source.selectedText, selected);
   assert.ok(!source.mainText.includes(selected));
   assert.equal(source.mainText.split("额外背景").length - 1, 1);
-  assert.ok(source.mainText.length <= 1500);
-  assert.equal(compactSource({ ...page, mainText: "文".repeat(20000) }).mainText.length, 6000);
+  assert.ok(source.mainText.length <= 3000);
+  assert.equal(compactSource({ ...page, mainText: "文".repeat(20000) }).mainText.length, 10000);
+  // The model keeps the whole selection the content script allows (12,000 characters).
+  assert.equal(compactSource({ ...page, selectedText: "选".repeat(13000) }).selectedText.length, 12000);
 });
 
 test("incremental JSON scanner handles fragmented escapes and nested fields and emits only once", () => {
@@ -201,4 +203,13 @@ test("a later stream error leaves emitted valid items intact and does not retry"
   }, { onItem(item) { seen.push(item); } }), error => /生成中断/.test(error.message) && !error.message.includes("provider-secret"));
   assert.equal(requests, 1); assert.equal(seen.length, 1);
   assert.equal(seen[0].question, "问题 1？");
+});
+
+test("the caller's signal stops a request and is reported as stopped, not as a timeout", async () => {
+  const controller = new AbortController();
+  const pending = generateQuestions(page, { apiKey: "test" }, (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+  }), { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, /已停止生成/);
 });

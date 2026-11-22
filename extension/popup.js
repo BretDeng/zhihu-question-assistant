@@ -159,6 +159,31 @@ function renderStyleLibrary() {
 function styleStatus(message, error = false) { $("#questionStyleStatus").textContent = message; $("#questionStyleStatus").classList.toggle("is-error", error); }
 loadDescriptionMode();
 modeButtons.forEach((button, index) => { button.onclick = () => saveDescriptionMode(index ? "original" : "summary"); });
+// The worker applies the toolbar behavior and tells open pages when this changes.
+const PANEL_MODE_KEY = "panelMode";
+const panelModeButtons = [$("#floatingModeButton"), $("#sidePanelModeButton")];
+function renderPanelMode(mode) {
+  const side = mode === "sidePanel";
+  panelModeButtons[0].setAttribute("aria-pressed", String(!side));
+  panelModeButtons[1].setAttribute("aria-pressed", String(side));
+  $("#panelModeHint").textContent = side
+    ? "网页上不再显示「问」。点浏览器工具栏的扩展图标打开侧边栏；设置在侧边栏顶部的模型名称里。"
+    : "网页右下角显示「问」，点开后在网页上展开面板，可拖动。";
+}
+chrome.storage.local.get(PANEL_MODE_KEY).then(stored => {
+  renderPanelMode(stored[PANEL_MODE_KEY]);
+  panelModeButtons.forEach(button => { button.disabled = false; });
+}).catch(() => { $("#panelModeStatus").textContent = "读取打开方式失败，请重新打开面板。"; });
+panelModeButtons.forEach((button, index) => {
+  button.onclick = async () => {
+    const mode = index ? "sidePanel" : "floating";
+    try {
+      await chrome.storage.local.set({ [PANEL_MODE_KEY]: mode });
+      renderPanelMode(mode);
+      $("#panelModeStatus").textContent = mode === "sidePanel" ? "已切换为侧边栏。之后点工具栏图标即可打开。" : "已切换为悬浮球，已打开的网页会立即显示「问」。";
+    } catch { $("#panelModeStatus").textContent = "保存失败，请重试。"; }
+  };
+});
 const ALL_SITES = { origins: ["https://*/*"] };
 const imageInput = $("#attachImagesInput");
 async function renderImagePermission() {
@@ -182,6 +207,7 @@ $("#imagePermissionButton").onclick = async () => {
 chrome.storage.onChanged?.addListener((changes, area) => {
   if (area === "local" && changes[DESCRIPTION_MODE_KEY]) renderDescriptionMode(normalizeDescriptionMode(changes[DESCRIPTION_MODE_KEY].newValue));
   if (area === "local" && changes[QUESTION_STYLE_KEY]) renderQuestionStyle(changes[QUESTION_STYLE_KEY].newValue);
+  if (area === "local" && changes[PANEL_MODE_KEY]) renderPanelMode(changes[PANEL_MODE_KEY].newValue);
   // Keep the popup and the dashboard in sync when the other one saves.
   if (changes.modelProfiles || changes.modelProfileKeys) load();
 });

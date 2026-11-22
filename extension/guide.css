@@ -1,6 +1,6 @@
 .guide{max-width:640px}
 .guide .app-header{align-items:flex-end}.guide h1{font-size:24px}
-.step-progress{margin:-8px 0 14px;font-size:12px;font-weight:600;color:#4031bd}
+.step-progress{margin:-8px 0 14px;font-size:12px;font-weight:600;color:var(--qa-accent-strong)}
 .steps{list-style:none;margin:0;padding:0}
 .step-card{display:none;padding:28px 28px 22px;background:white;border:1px solid var(--qa-line);border-radius:18px;font-size:15px;line-height:1.85}
 .step-card.is-current{display:block}

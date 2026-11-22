@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const source = await readFile(new URL("../extension/contentScript.js", import.meta.url), "utf8");
+const panelSource = await readFile(new URL("../extension/questionPanel.js", import.meta.url), "utf8");
 
 // Minimal DOM that records style writes to detect redundant observer updates.
-function mount({ innerWidth = 1280, innerHeight = 900 } = {}) {
+async function mount({ innerWidth = 1280, innerHeight = 900, uiState = { ok: true, data: { panelMode: "floating" } } } = {}) {
   const writes = [];
   let resizeObserverCallback = null;
   const nodes = [];
@@ -51,7 +52,7 @@ function mount({ innerWidth = 1280, innerHeight = 900 } = {}) {
     "format-status", "onboarding", "onboarding-index", "onboarding-text", "onboarding-next",
     "onboarding-guide", "guide-button"]) element(name);
   const context = {
-    innerWidth, innerHeight, performance, Date, crypto: { randomUUID: () => "id" },
+    innerWidth, innerHeight, performance, Date, crypto: { randomUUID: () => "id" }, location: { href: "https://example.com/" },
     setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {},
     document: {
       documentElement: element("html"), body: element("body"), title: "页面",
@@ -67,15 +68,18 @@ function mount({ innerWidth = 1280, innerHeight = 900 } = {}) {
     ZhihuPageText: { extractDetailed: () => ({ text: "正文", originalPartial: false, originalUnavailableReason: "" }) },
     ZhihuUiTheme: "",
     getSelection: () => ({ toString: () => "" }),
-    chrome: { runtime: { onMessage: { addListener() {} }, sendMessage: async () => ({ ok: false }) } },
+    chrome: { runtime: { onMessage: { addListener() {} }, sendMessage: async (message) => message.type === "GET_UI_STATE" ? uiState : ({ ok: false }) } },
   };
   context.globalThis = context;
+  vm.runInNewContext(panelSource, context);
   vm.runInNewContext(source, context);
-  return { writes, shadow, resize: () => resizeObserverCallback?.() };
+  // The bubble mounts after the UI state (and its display mode) arrives.
+  await new Promise(resolve => setImmediate(resolve));
+  return { writes, shadow, nodes, document: context.document, resize: () => resizeObserverCallback?.() };
 }
 
-test("a settled dock layout stops writing styles when its own resize fires back", () => {
-  const ui = mount();
+test("a settled dock layout stops writing styles when its own resize fires back", async () => {
+  const ui = await mount();
   const before = ui.writes.length;
   // The observer watches the element this layout mutates, so re-entering it
   // must settle instead of queueing an identical write on every callback.
@@ -83,8 +87,8 @@ test("a settled dock layout stops writing styles when its own resize fires back"
   assert.deepEqual(ui.writes.slice(before), []);
 });
 
-test("the bubble and the panel share one positioned dock", () => {
-  const ui = mount();
+test("the bubble and the panel share one positioned dock", async () => {
+  const ui = await mount();
   const dock = ui.shadow.querySelector(".assistant-dock");
   const ball = ui.shadow.querySelector(".floating-ball");
   const panel = ui.shadow.querySelector(".panel");
@@ -93,4 +97,10 @@ test("the bubble and the panel share one positioned dock", () => {
   assert.match(`${dock.style.right} ${dock.style.bottom}`, /px/);
   assert.equal(ball.style.left, "");
   assert.equal(panel.style.left, "");
+});
+
+test("side panel mode draws nothing on the page", async () => {
+  const ui = await mount({ uiState: { ok: true, data: { panelMode: "sidePanel" } } });
+  assert.equal(ui.document.documentElement.children.length, 0);
+  assert.equal(ui.shadow.innerHTML, "");
 });

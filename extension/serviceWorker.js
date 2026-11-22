@@ -13,9 +13,26 @@ function validBallPosition(value) {
 }
 const openGuide = () => chrome.tabs.create({ url: chrome.runtime.getURL("guide.html") });
 
+// "floating": the 问 bubble on every page, toolbar icon opens the settings popup.
+// "sidePanel": nothing is drawn on pages, toolbar icon opens the side panel.
+const PANEL_MODE_KEY = "panelMode";
+const normalizePanelMode = value => value === "sidePanel" ? "sidePanel" : "floating";
+// Action behavior is not persisted across browser restarts, so it is applied
+// whenever the worker starts as well as when the setting changes.
+async function applyPanelMode(mode) {
+  mode ??= normalizePanelMode((await chrome.storage.local.get(PANEL_MODE_KEY))[PANEL_MODE_KEY]);
+  const side = mode === "sidePanel";
+  await chrome.action?.setPopup?.({ popup: side ? "" : "popup.html" });
+  await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: side });
+}
+applyPanelMode().catch(() => {});
+
 chrome.runtime.onInstalled?.addListener(({ reason }) => {
   if (reason === "install") openGuide().catch(() => {});
 });
+
+// Extension pages (the side panel) have no sender tab; they name the page's tab.
+const fromExtensionPage = sender => !sender.tab && typeof sender.url === "string" && typeof chrome.runtime.getURL === "function" && sender.url.startsWith(chrome.runtime.getURL(""));
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "OPEN_GUIDE") {
@@ -23,9 +40,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "GET_UI_STATE") {
-    chrome.storage.local.get([ONBOARDING_KEY, BALL_POSITION_KEY]).then(stored => sendResponse({ ok: true, data: {
+    chrome.storage.local.get([ONBOARDING_KEY, BALL_POSITION_KEY, PANEL_MODE_KEY]).then(stored => sendResponse({ ok: true, data: {
       onboardingSeen: stored[ONBOARDING_KEY] === true,
       ballPosition: validBallPosition(stored[BALL_POSITION_KEY]),
+      panelMode: normalizePanelMode(stored[PANEL_MODE_KEY]),
     } })).catch(() => sendResponse({ ok: false }));
     return true;
   }
@@ -44,6 +62,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "GET_DESCRIPTION_MODE") {
     readDescriptionMode(chrome).then(mode => sendResponse({ ok: true, data: { mode } }))
       .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  // The web panel switches the mode in place; the popup and other tabs follow
+  // through the storage change broadcast.
+  if (message?.type === "SET_DESCRIPTION_MODE") {
+    if (!["summary", "original"].includes(message.mode)) { sendResponse({ ok: false, error: "无效的描述形式。" }); return; }
+    chrome.storage.local.set({ [DESCRIPTION_MODE_KEY]: message.mode }).then(() => sendResponse({ ok: true, data: { mode: message.mode } }))
+      .catch(() => sendResponse({ ok: false, error: "保存描述形式失败。" }));
     return true;
   }
   if (message?.type === "GET_QUESTION_STYLE") {
@@ -106,11 +132,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .catch(error => sendResponse({ ok: false, error: error.message || "图片下载失败。" }));
     return true;
   }
+  if (message?.type === "CANCEL_ZHIHU_QUESTIONS") {
+    const owner = requestOwner(message, _sender);
+    if (!owner || typeof message.requestId !== "string") return;
+    runningRequests.get(`${owner.key}:${message.requestId}`)?.abort();
+    sendResponse({ ok: true });
+    return;
+  }
   if (message?.type !== "GENERATE_ZHIHU_QUESTIONS") {
     return undefined;
   }
 
-  requestQuestions(message.payload, _sender, message.requestId)
+  requestQuestions(message.payload, _sender, message.requestId, message)
     .then((data) => sendResponse({ ok: true, data }))
     .catch((error) => {
       sendResponse({
@@ -131,12 +164,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const types = [
     changes[SITE_RULES_KEY] && "SITE_RULES_CHANGED",
     changes[DESCRIPTION_MODE_KEY] && "DESCRIPTION_MODE_CHANGED",
+    changes[PANEL_MODE_KEY] && "PANEL_MODE_CHANGED",
     changes.questionStylePreferences && "QUESTION_STYLE_CHANGED",
     (changes.modelProfiles || changes.modelProfileKeys) && "MODEL_CHANGED",
   ].filter(Boolean);
   if (!types.length) return;
+  const panelMode = changes[PANEL_MODE_KEY] ? normalizePanelMode(changes[PANEL_MODE_KEY].newValue) : undefined;
+  if (panelMode) applyPanelMode(panelMode).catch(() => {});
   chrome.tabs.query({}).then(tabs => Promise.allSettled(tabs.flatMap(tab =>
-    types.map(type => chrome.tabs.sendMessage(tab.id, { type }))
+    types.map(type => chrome.tabs.sendMessage(tab.id, type === "PANEL_MODE_CHANGED" ? { type, mode: panelMode } : { type }))
   ))).catch(() => {});
 });
 
@@ -213,7 +249,12 @@ async function fetchDraftImage(tabId, index) {
   try {
     const response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", signal: controller.signal });
     if (!response.ok) throw new Error(`图片下载失败（HTTP ${response.status}）。`);
-    const blob = await response.blob();
+    // Reject by headers before downloading anything, then count bytes while
+    // streaming, since Content-Length may be missing or wrong.
+    const declaredType = response.headers?.get?.("content-type")?.split(";")[0].trim().toLowerCase();
+    if (declaredType && !IMAGE_TYPES.test(declaredType)) throw new Error("不支持的图片格式。");
+    if (Number(response.headers?.get?.("content-length")) > MAX_IMAGE_BYTES) throw new Error("图片超过 10 MB。");
+    const blob = await readLimitedBlob(response, MAX_IMAGE_BYTES);
     const type = blob.type.split(";")[0].trim().toLowerCase();
     if (!IMAGE_TYPES.test(type)) throw new Error("不支持的图片格式。");
     if (blob.size > MAX_IMAGE_BYTES) throw new Error("图片超过 10 MB。");
@@ -232,10 +273,52 @@ async function fetchDraftImage(tabId, index) {
   } finally { clearTimeout(timer); }
 }
 
-chrome.tabs.onRemoved.addListener((tabId) => chrome.storage.session.remove(`zhihuDraft:${tabId}`));
+async function readLimitedBlob(response, limit) {
+  const reader = response.body?.getReader?.();
+  if (!reader) return response.blob();
+  const chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error("图片超过 10 MB。");
+      chunks.push(value);
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+  return new Blob(chunks, { type: response.headers?.get?.("content-type") || "" });
+}
 
-async function requestQuestions(payload, sender = {}, requestId) {
-  if (sender.url && !await siteEnabled(sender.url)) throw new Error("此网站已停用插件，可在面板的网站过滤中恢复。");
+// Generations in flight, keyed by `${tabId}:${requestId}`, so the stop button,
+// leaving the page or closing the tab aborts the model request instead of
+// spending quota on drafts nobody will see.
+const runningRequests = new Map();
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.storage.session.remove(`zhihuDraft:${tabId}`);
+  for (const [key, controller] of runningRequests) if (key.startsWith(`${tabId}:`)) controller.abort();
+});
+
+// Who a run belongs to: a page's own content script, or the side panel on
+// behalf of a tab. Runs stay keyed by tab so closing the tab stops them.
+function requestOwner(message, sender = {}) {
+  if (sender.tab?.id) return { key: sender.tab.id, tabId: sender.tab.id, extensionPage: false };
+  if (fromExtensionPage(sender) && Number.isInteger(message?.tabId)) return { key: message.tabId, tabId: message.tabId, extensionPage: true };
+  return null;
+}
+async function requestQuestions(payload, sender = {}, requestId, message = {}) {
+  const owner = requestOwner(message, sender);
+  const requestKey = owner && typeof requestId === "string" ? `${owner.key}:${requestId}` : "";
+  const controller = requestKey ? new AbortController() : null;
+  if (requestKey) runningRequests.set(requestKey, controller);
+  try { return await runQuestions(payload, sender, requestId, controller?.signal, owner); }
+  finally { if (requestKey) runningRequests.delete(requestKey); }
+}
+async function runQuestions(payload, sender, requestId, signal, owner) {
+  // The side panel's payload comes from the tab's content script, so its URL
+  // is the page that gets checked against the site filter.
+  const pageUrl = owner?.extensionPage ? payload?.url : sender.url;
+  if (pageUrl && !await siteEnabled(pageUrl)) throw new Error("此网站已停用插件，可在面板的网站过滤中恢复。");
   // Read settings in the trusted background, never use a page-supplied API URL or key.
   const config = await activeModelConfig();
   const mode = await readDescriptionMode(chrome);
@@ -248,6 +331,10 @@ async function requestQuestions(payload, sender = {}, requestId) {
   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo().catch(() => {}), 20000);
   let delivery = Promise.resolve();
   const progress = (data) => {
+    if (owner?.extensionPage && typeof requestId === "string") {
+      delivery = delivery.then(() => chrome.runtime.sendMessage({ type: "ZH_QUESTION_PROGRESS", requestId, ...data })).catch(() => {});
+      return;
+    }
     if (!sender.tab?.id || typeof requestId !== "string") return;
     const target = sender.documentId ? { documentId: sender.documentId } : { frameId: sender.frameId || 0 };
     delivery = delivery.then(() => chrome.tabs.sendMessage(sender.tab.id, { type: "ZH_QUESTION_PROGRESS", requestId, ...data }, target)).catch(() => {});
@@ -258,6 +345,7 @@ async function requestQuestions(payload, sender = {}, requestId) {
     const result = await generateQuestions(modelPage, { ...config, descriptionMode: mode, questionStyle }, undefined, {
       onItem: (item, index) => progress({ item: decorateStyle(item), index }),
       onProgress: (phase) => progress({ phase }),
+      signal,
     });
     await delivery;
     return { ...result, items: result.items.map(decorateStyle) };

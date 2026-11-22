@@ -47,14 +47,14 @@ test("the guide opens on first install only and from page messages", async () =>
 
 test("onboarding and ball position are persisted with validated values only", async () => {
   const bg = await background();
-  assert.deepEqual(JSON.parse(JSON.stringify((await bg.send({ type: "GET_UI_STATE" })).data)), { onboardingSeen: false, ballPosition: null });
+  assert.deepEqual(JSON.parse(JSON.stringify((await bg.send({ type: "GET_UI_STATE" })).data)), { onboardingSeen: false, ballPosition: null, panelMode: "floating" });
   await bg.send({ type: "SET_ONBOARDING_SEEN" });
   assert.equal(await bg.send({ type: "SET_BALL_POSITION", position: { x: 2, y: 0.5 } }), undefined);
   assert.equal(await bg.send({ type: "SET_BALL_POSITION", position: { x: "1", y: 0.5 } }), undefined);
   assert.equal("ballPosition" in bg.stored, false);
   assert.equal((await bg.send({ type: "SET_BALL_POSITION", position: { x: 0.25, y: 1, extra: "dropped" } })).ok, true);
   assert.deepEqual(JSON.parse(JSON.stringify(bg.stored.ballPosition)), { x: 0.25, y: 1 });
-  assert.deepEqual(JSON.parse(JSON.stringify((await bg.send({ type: "GET_UI_STATE" })).data)), { onboardingSeen: true, ballPosition: { x: 0.25, y: 1 } });
+  assert.deepEqual(JSON.parse(JSON.stringify((await bg.send({ type: "GET_UI_STATE" })).data)), { onboardingSeen: true, ballPosition: { x: 0.25, y: 1 }, panelMode: "floating" });
   await bg.send({ type: "SET_BALL_POSITION", position: null });
   assert.equal("ballPosition" in bg.stored, false);
 });

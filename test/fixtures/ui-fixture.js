@@ -39,6 +39,10 @@ globalThis.chrome = { tabs: { async create({ url }) { location.href = url; retur
       return { ok: true, data: publicQuestionStyle(current) };
     } catch (error) { return { ok: false, error: error.message }; }
   }
+  else if (message.type === "SET_DESCRIPTION_MODE") {
+    await chrome.storage.local.set({ descriptionMode: message.mode });
+    return { ok: true, data: { mode: message.mode } };
+  }
   else if (message.type === "GET_DESCRIPTION_MODE") {
     const { readDescriptionMode } = await import("/draftPreferences.js");
     return { ok: true, data: { mode: await readDescriptionMode(chrome) } };

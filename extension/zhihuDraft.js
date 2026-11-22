@@ -30,7 +30,7 @@
       textarea,input{width:100%;font-size:12px;line-height:1.7;margin:0;border:0;padding:4px 2px;background:white;border-radius:6px}textarea{min-height:92px;resize:vertical}textarea[aria-label="问题描述"]{min-height:130px}
       .image-group label{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--qa-ink)}.image-group input{width:auto;margin:0}.image-strip{display:flex;gap:6px;margin-top:8px;overflow-x:auto}.image-strip img{width:56px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--qa-line);background:var(--qa-bg)}
       button{font-size:11px;margin:5px 5px 0 0}.field-heading button{font-size:10px;margin:0;padding:3px 6px}
-      .status{color:#5140a9;background:var(--qa-soft);border:1px solid #e3dfff;border-radius:11px;padding:10px 12px;font-size:11px;line-height:1.7;margin:0 0 14px;overflow-wrap:anywhere}
+      .status{color:var(--qa-accent-strong);background:var(--qa-soft);border:1px solid var(--qa-accent-line);border-radius:11px;padding:10px 12px;font-size:11px;line-height:1.7;margin:0 0 14px;overflow-wrap:anywhere}
     </style><section aria-label="待提问草稿"><div class="draft-header"><h2>提问草稿</h2></div><div class="details"><p class="intro">内容与话题会自动填入知乎。你只需审核后发布，已有内容不会被覆盖。</p></div></section>`;
     const section = root.querySelector("section");
     if (draft.descriptionMode === "original") root.querySelector("h2").textContent = draft.originalPartial ? "提问草稿 · 已加载原文" : "提问草稿 · 网页原文";
@@ -99,19 +99,22 @@
       group.append(label, strip); details.append(group);
     }
     async function insertImages(question, signal) {
-      const files = [];
-      let failed = 0;
-      for (const [index] of images.entries()) {
-        signal.throwIfAborted();
-        status.textContent = `正在下载原文图片 ${index + 1}/${images.length}…`;
+      // Download all images at once; insertion below still keeps source order.
+      let done = 0;
+      status.textContent = `正在下载原文图片 0/${images.length}…`;
+      const downloads = await Promise.all(images.map(async (_url, index) => {
         try {
           const reply = await chrome.runtime.sendMessage({ type: "FETCH_DRAFT_IMAGE", index });
           if (!reply?.ok) throw new Error(reply?.error);
           const bytes = Uint8Array.from(atob(reply.data.base64), c => c.charCodeAt(0));
           const ext = reply.data.type.split("/")[1].replace("jpeg", "jpg");
-          files.push(new File([bytes], `image-${index + 1}.${ext}`, { type: reply.data.type }));
-        } catch { failed++; }
-      }
+          return new File([bytes], `image-${index + 1}.${ext}`, { type: reply.data.type });
+        } catch { return null; }
+        finally { if (!signal.aborted) status.textContent = `正在下载原文图片 ${++done}/${images.length}…`; }
+      }));
+      signal.throwIfAborted();
+      const files = downloads.filter(Boolean);
+      const failed = images.length - files.length;
       if (!files.length) return `原文图片未能下载，可手动上传。`;
       const inserted = await ZhihuQuestionComposer.insertImages(question, files, { signal,
         onProgress: (i, total) => { status.textContent = `正在插入图片 ${i}/${total}，等待知乎上传…`; } });
@@ -168,11 +171,12 @@
           try { imageNote = await insertImages(fields.question.value.trim(), signal); }
           catch { if (signal.aborted || disposed) return; imageNote = "图片插入未完成，可手动上传。"; }
           attachImages.checked = false; // Never paste the same images twice.
-          status.textContent = imageNote;
         }
         const title = ZhihuQuestionComposer.findTitle();
         if (title) attemptedTitles.add(title);
-        status.textContent = result.message;
+        // Every final message keeps the image result, whatever happens to topics.
+        const filled = `${result.message}${imageNote ? ` ${imageNote}` : ""}`;
+        status.textContent = filled;
         // A rich-text editor may turn a URL into a link card, changing its
         // visible text. Topic binding must not depend on exact description text.
         if (title?.value.trim() === fields.question.value.trim()) {
@@ -181,7 +185,7 @@
           try {
             const topics = await ZhihuQuestionTopics.bindTopics(fields.keywords.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean), fields.question.value.trim(), showTopicProgress, { signal });
             status.textContent = `${result.ok ? "" : `${result.message} `}${imageNote ? `${imageNote} ` : ""}${ZhihuQuestionTopics.summary(topics)}`;
-          } catch { status.textContent = `${result.message} 话题绑定未完成，请检查已选话题。`; }
+          } catch { status.textContent = `${filled} 话题绑定未完成，请检查已选话题。`; }
         }
         if (!result.ok) setCollapsed(false);
       } catch {

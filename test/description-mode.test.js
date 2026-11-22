@@ -53,7 +53,7 @@ function background({ mode = "original", generate } = {}) {
     },
     tabs: { onRemoved: { addListener() {} }, sendMessage: async (_tab, value) => delivered.push(value), create: async () => ({ id: 7 }), update: async () => {} },
   };
-  vm.runInNewContext(worker, { ...preferences, ...styles, chrome, URL, Date, Error, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }), generateQuestions: generate });
+  vm.runInNewContext(worker, { ...preferences, ...styles, chrome, URL, Date, Error, AbortController, setInterval: () => 1, clearInterval() {}, activeModelConfig: async () => ({ apiKey: "fixture" }), generateQuestions: generate });
   return { send: message => new Promise(resolve => listener(message, { tab: { id: 7 } }, resolve)), delivered, stored, switchMode: value => { mode = value; } };
 }
 test("background captures original mode for the whole stream and hands off a description that fits with its citation", async () => {

@@ -128,3 +128,25 @@ test("composer pastes each image file at the end and waits for Zhihu's upload", 
   title.value = "别的标题？";
   assert.equal(await context.ZhihuQuestionComposer.insertImages("标题？", ["e"]), 0, "never pastes into a different question");
 });
+
+test("oversized images are rejected from headers or mid-stream, before a full download", async () => {
+  const big = 11 * 1024 * 1024;
+  let streamCancelled = false, bodyRead = false;
+  const headers = (values) => new Headers(values);
+  const { send } = await worker({ "zhihuDraft:5": { images: ["https://img.example/declared.jpg", "https://img.example/stream.jpg", "https://img.example/page.html"] } }, async (url) => {
+    if (url.includes("declared")) return { ok: true, headers: headers({ "content-type": "image/jpeg", "content-length": String(big) }), body: { getReader() { bodyRead = true; } } };
+    if (url.includes("page")) return { ok: true, headers: headers({ "content-type": "text/html" }), body: { getReader() { bodyRead = true; } } };
+    // No Content-Length: the worker must stop once the running total passes 10 MB.
+    let sent = 0;
+    return { ok: true, headers: headers({ "content-type": "image/png" }), body: { getReader: () => ({
+      read: async () => { sent++; return { done: false, value: new Uint8Array(1024 * 1024) }; },
+      cancel: async () => { streamCancelled = true; },
+    }) }, get sent() { return sent; } };
+  });
+  const zhihu = { tab: { id: 5 }, url: "https://www.zhihu.com/" };
+  assert.match((await send({ type: "FETCH_DRAFT_IMAGE", index: 0 }, zhihu)).error, /10 MB/);
+  assert.match((await send({ type: "FETCH_DRAFT_IMAGE", index: 2 }, zhihu)).error, /不支持的图片格式/);
+  assert.equal(bodyRead, false, "headers alone reject these two");
+  assert.match((await send({ type: "FETCH_DRAFT_IMAGE", index: 1 }, zhihu)).error, /10 MB/);
+  assert.equal(streamCancelled, true);
+});
